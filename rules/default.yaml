@@ -1,0 +1,375 @@
+# secrethound 기본 룰셋
+#
+# [중요] Go의 regexp 패키지는 RE2 엔진을 사용한다.
+# lookahead(?=), lookbehind(?<=), 백레퍼런스(\1)를 지원하지 않으므로 사용 금지.
+# (?i) 인라인 플래그와 \b 단어경계는 사용 가능하다.
+#
+# 필드 설명
+#   id          : 룰 식별자 (리포트/화이트리스트에서 참조)
+#   description : 사람이 읽는 설명
+#   severity    : critical | high | medium | low
+#   keywords    : 정규식 실행 전 1차 필터. 라인에 이 문자열이 없으면 정규식을 건너뛴다(성능 최적화)
+#   regex       : 탐지 정규식
+#   secret_group: 실제 시크릿 값이 담긴 캡처 그룹 번호 (0 = 전체 매치)
+#   entropy     : 매치된 값의 최소 Shannon 엔트로피. 미달 시 탈락 (선택)
+#   tags        : 분류용 태그
+
+version: 1
+
+rules:
+  # ---------------------------------------------------------------- AWS
+  - id: aws-access-key-id
+    description: AWS Access Key ID
+    severity: high
+    keywords: [AKIA, ASIA, ABIA, ACCA, A3T]
+    regex: '\b((A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16})\b'
+    secret_group: 1
+    tags: [aws, cloud]
+
+  - id: aws-secret-access-key
+    description: AWS Secret Access Key (키워드 컨텍스트 기반)
+    severity: critical
+    keywords: [aws, secret]
+    regex: '(?i)aws[_\-. ]?(secret[_\-. ]?)?(access[_\-. ]?)?key[^a-zA-Z0-9]{0,20}[''"]([A-Za-z0-9/+=]{40})[''"]'
+    secret_group: 3
+    entropy: 4.2
+    tags: [aws, cloud]
+
+  - id: aws-session-token
+    description: AWS Session Token
+    severity: high
+    keywords: [aws_session_token, x-amz-security-token]
+    regex: '(?i)(aws[_\-.]?session[_\-.]?token|x-amz-security-token)[^a-zA-Z0-9]{0,20}[''"]([A-Za-z0-9/+=]{100,})[''"]'
+    secret_group: 2
+    tags: [aws, cloud]
+
+  # ---------------------------------------------------------------- GitHub
+  - id: github-pat
+    description: GitHub Personal Access Token (classic)
+    severity: critical
+    keywords: [ghp_]
+    regex: '\b(ghp_[A-Za-z0-9]{36})\b'
+    secret_group: 1
+    tags: [github, vcs]
+
+  - id: github-fine-grained-pat
+    description: GitHub Fine-grained Personal Access Token
+    severity: critical
+    keywords: [github_pat_]
+    regex: '\b(github_pat_[A-Za-z0-9_]{82})\b'
+    secret_group: 1
+    tags: [github, vcs]
+
+  - id: github-oauth-token
+    description: GitHub OAuth / App / Refresh Token
+    severity: critical
+    keywords: [gho_, ghu_, ghs_, ghr_]
+    regex: '\b((gho|ghu|ghs|ghr)_[A-Za-z0-9]{36})\b'
+    secret_group: 1
+    tags: [github, vcs]
+
+  - id: gitlab-pat
+    description: GitLab Personal Access Token
+    severity: critical
+    keywords: [glpat-]
+    regex: '\b(glpat-[A-Za-z0-9\-_]{20})\b'
+    secret_group: 1
+    tags: [gitlab, vcs]
+
+  # ---------------------------------------------------------------- Slack
+  - id: slack-token
+    description: Slack Token (bot / user / workspace)
+    severity: critical
+    keywords: [xoxb-, xoxp-, xoxa-, xoxr-, xoxs-]
+    regex: '\b(xox[baprs]-[0-9A-Za-z\-]{10,72})\b'
+    secret_group: 1
+    tags: [slack, messaging]
+
+  - id: slack-app-token
+    description: Slack App-Level Token
+    severity: high
+    keywords: [xapp-]
+    regex: '\b(xapp-[0-9]-[A-Z0-9]+-[0-9]+-[a-f0-9]{64})\b'
+    secret_group: 1
+    tags: [slack, messaging]
+
+  - id: slack-webhook
+    description: Slack Incoming Webhook URL
+    severity: high
+    keywords: ['hooks.slack.com']
+    regex: '(https://hooks\.slack\.com/services/T[A-Za-z0-9_]{8,12}/B[A-Za-z0-9_]{8,12}/[A-Za-z0-9_]{24})'
+    secret_group: 1
+    tags: [slack, webhook]
+
+  # ---------------------------------------------------------------- 결제
+  - id: stripe-secret-key
+    description: Stripe Secret / Restricted Key (live)
+    severity: critical
+    keywords: [sk_live_, rk_live_]
+    regex: '\b((sk|rk)_live_[0-9A-Za-z]{24,99})\b'
+    secret_group: 1
+    tags: [stripe, payment]
+
+  - id: stripe-test-key
+    description: Stripe Test Key (실제 피해는 없으나 위생상 탐지)
+    severity: low
+    keywords: [sk_test_, rk_test_]
+    regex: '\b((sk|rk)_test_[0-9A-Za-z]{24,99})\b'
+    secret_group: 1
+    tags: [stripe, payment]
+
+  - id: stripe-publishable-key
+    description: Stripe Publishable Key (공개용이나 오탐 구분 목적으로 룰 유지)
+    severity: low
+    keywords: [pk_live_]
+    regex: '\b(pk_live_[0-9A-Za-z]{24,99})\b'
+    secret_group: 1
+    tags: [stripe, payment, public-by-design]
+
+  # ---------------------------------------------------------------- Google
+  - id: google-api-key
+    description: Google API Key
+    severity: high
+    keywords: [AIza]
+    regex: '\b(AIza[0-9A-Za-z\-_]{35})\b'
+    secret_group: 1
+    tags: [google, cloud]
+
+  - id: google-oauth-client-id
+    description: Google OAuth Client ID (공개 식별자, 시크릿 동반 여부 확인용)
+    severity: low
+    keywords: [apps.googleusercontent.com]
+    regex: '\b([0-9]+-[0-9a-z_]{32}\.apps\.googleusercontent\.com)\b'
+    secret_group: 1
+    tags: [google, oauth, public-by-design]
+
+  - id: gcp-service-account-key
+    description: GCP Service Account Private Key (JSON 키 파일 내 private_key 필드)
+    severity: critical
+    keywords: [service_account, private_key_id]
+    regex: '"type"\s*:\s*"service_account"'
+    secret_group: 0
+    tags: [google, cloud]
+
+  # ---------------------------------------------------------------- AI / SaaS
+  - id: openai-api-key
+    description: OpenAI API Key
+    severity: critical
+    keywords: [sk-]
+    regex: '\b(sk-(proj-)?[A-Za-z0-9\-_]{20,}T3BlbkFJ[A-Za-z0-9\-_]{20,})\b'
+    secret_group: 1
+    tags: [ai, saas]
+
+  - id: anthropic-api-key
+    description: Anthropic API Key
+    severity: critical
+    keywords: [sk-ant-]
+    regex: '\b(sk-ant-[A-Za-z0-9\-_]{90,})\b'
+    secret_group: 1
+    tags: [ai, saas]
+
+  - id: sendgrid-api-key
+    description: SendGrid API Key
+    severity: critical
+    keywords: ['SG.']
+    regex: '\b(SG\.[A-Za-z0-9\-_]{22}\.[A-Za-z0-9\-_]{43})\b'
+    secret_group: 1
+    tags: [email, saas]
+
+  - id: mailgun-api-key
+    description: Mailgun API Key
+    severity: high
+    keywords: [key-]
+    regex: '\b(key-[0-9a-f]{32})\b'
+    secret_group: 1
+    tags: [email, saas]
+
+  - id: twilio-api-key
+    description: Twilio API Key SID
+    severity: high
+    keywords: [SK, twilio]
+    regex: '(?i)twilio[^a-zA-Z0-9]{0,20}(SK[0-9a-fA-F]{32})'
+    secret_group: 1
+    tags: [twilio, saas]
+
+  - id: npm-access-token
+    description: npm Access Token
+    severity: critical
+    keywords: [npm_]
+    regex: '\b(npm_[A-Za-z0-9]{36})\b'
+    secret_group: 1
+    tags: [npm, package-registry]
+
+  - id: shopify-access-token
+    description: Shopify Access Token
+    severity: critical
+    keywords: [shpat_, shpca_, shppa_, shpss_]
+    regex: '\b(shp(at|ca|pa|ss)_[a-fA-F0-9]{32})\b'
+    secret_group: 1
+    tags: [shopify, saas]
+
+  - id: discord-bot-token
+    description: Discord Bot Token
+    severity: high
+    keywords: [discord]
+    regex: '(?i)discord[^a-zA-Z0-9]{0,20}([MNO][A-Za-z0-9\-_]{23}\.[A-Za-z0-9\-_]{6}\.[A-Za-z0-9\-_]{27})'
+    secret_group: 1
+    tags: [discord, messaging]
+
+  - id: telegram-bot-token
+    description: Telegram Bot Token
+    severity: high
+    keywords: [telegram, api.telegram.org, bot]
+    regex: '\b([0-9]{8,10}:AA[A-Za-z0-9\-_]{33})\b'
+    secret_group: 1
+    tags: [telegram, messaging]
+
+  # ---------------------------------------------------------------- 키/인증서
+  - id: private-key
+    description: PEM 형식 개인키 (RSA/EC/DSA/OpenSSH/PGP)
+    severity: critical
+    keywords: ['PRIVATE KEY']
+    regex: '-----BEGIN ((RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED) )?PRIVATE KEY( BLOCK)?-----'
+    secret_group: 0
+    tags: [key, crypto]
+
+  - id: jwt
+    description: JWT (서명된 토큰, 만료 여부와 무관하게 탐지)
+    severity: medium
+    keywords: [eyJ]
+    regex: '\b(eyJ[A-Za-z0-9\-_]{10,}\.eyJ[A-Za-z0-9\-_]{10,}\.[A-Za-z0-9\-_]{10,})\b'
+    secret_group: 1
+    tags: [jwt, auth]
+
+  # ---------------------------------------------------------------- 인프라 / DB
+  - id: db-connection-string
+    description: DB 접속 문자열에 포함된 사용자명/비밀번호
+    severity: critical
+    keywords: ['://']
+    regex: '\b((postgres|postgresql|mysql|mariadb|mongodb|mongodb\+srv|redis|amqp)://[^\s:@/]+:[^\s:@/]+@[^\s/]+)'
+    secret_group: 1
+    tags: [database, credentials]
+
+  - id: azure-storage-key
+    description: Azure Storage Account Key
+    severity: critical
+    keywords: [AccountKey=]
+    regex: 'AccountKey=([A-Za-z0-9+/=]{86,88})'
+    secret_group: 1
+    tags: [azure, cloud]
+
+  - id: heroku-api-key
+    description: Heroku API Key
+    severity: high
+    keywords: [heroku]
+    regex: '(?i)heroku[^a-zA-Z0-9]{0,20}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
+    secret_group: 1
+    tags: [heroku, cloud]
+
+  # ---------------------------------------------------------------- 일반 패턴
+  - id: generic-api-key
+    description: 키워드 + 값 형태의 범용 시크릿 (엔트로피 검증 병행)
+    severity: medium
+    keywords: [key, secret, token, password, passwd, pwd, credential]
+    regex: '(?i)\b(api[_\-]?key|apikey|secret[_\-]?key|access[_\-]?token|auth[_\-]?token|client[_\-]?secret|password|passwd|credential)\b\s*[:=]\s*[''"]([A-Za-z0-9\-_=+/\.]{16,})[''"]'
+    secret_group: 2
+    entropy: 3.5
+    tags: [generic]
+
+  - id: basic-auth-header
+    description: HTTP Basic Auth 헤더에 하드코딩된 인증정보
+    severity: high
+    keywords: ['Basic ', authorization]
+    regex: '(?i)authorization\s*[:=]\s*[''"]?Basic\s+([A-Za-z0-9+/=]{16,})'
+    secret_group: 1
+    tags: [http, credentials]
+
+# ------------------------------------------------------------------
+# 엔트로피 분석 설정
+# 정규식 룰로 잡히지 않는 임의 문자열을 Shannon 엔트로피로 탐지한다.
+# 임계값이 낮으면 오탐 폭증, 높으면 미탐이 늘어나므로 실측 후 튜닝 필요.
+# ------------------------------------------------------------------
+entropy:
+  enabled: true
+  min_length: 20          # 이보다 짧은 문자열은 엔트로피가 신뢰할 수 없어 제외
+  max_length: 200         # 미니파이 코드 등 초장문 토큰 제외
+  thresholds:
+    base64: 4.5           # A-Za-z0-9+/= 로 구성된 문자열
+    hex: 3.0              # 0-9a-f 로만 구성된 문자열
+  severity: medium
+
+# ------------------------------------------------------------------
+# 오탐 필터 설정
+# exclude_*  : 스캔 자체를 건너뛰는 하드 제외
+# penalties  : 탐지는 하되 신뢰도 점수를 깎는 소프트 감점
+# min_confidence 미만은 리포트에서 제외한다 (기본 신뢰도 100에서 시작)
+# ------------------------------------------------------------------
+filter:
+  min_confidence: 50
+
+  exclude_paths:
+    - '(^|/)\.git/'
+    - '(^|/)(vendor|node_modules|bower_components)/'
+    - '(^|/)(dist|build|out|target)/'
+    - '\.(min\.js|min\.css|map)$'
+    - '(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|Cargo\.lock|Gemfile\.lock)$'
+
+  exclude_extensions:
+    - .png
+    - .jpg
+    - .jpeg
+    - .gif
+    - .ico
+    - .svg
+    - .pdf
+    - .zip
+    - .gz
+    - .tar
+    - .7z
+    - .exe
+    - .dll
+    - .so
+    - .dylib
+    - .class
+    - .jar
+    - .woff
+    - .woff2
+    - .ttf
+    - .mp4
+    - .mp3
+
+  penalties:
+    - id: test-path
+      pattern: '(^|/)(test|tests|spec|specs|__tests__|testdata|fixtures?)/'
+      score: -40
+      reason: 테스트 디렉토리의 값은 더미일 가능성이 높음
+
+    - id: example-path
+      pattern: '(^|/)(examples?|samples?|demos?|docs?)/'
+      score: -40
+      reason: 예제/문서 디렉토리의 값은 플레이스홀더일 가능성이 높음
+
+    - id: test-file-suffix
+      pattern: '(_test\.(go|py|js|ts|rb|java)|\.test\.(js|ts|tsx)|\.spec\.(js|ts|tsx))$'
+      score: -35
+      reason: 테스트 파일
+
+    - id: env-example-file
+      pattern: '(\.env\.(example|sample|template)|\.env\.dist)$'
+      score: -50
+      reason: .env 예시 파일은 실제 값이 아닌 템플릿
+
+    - id: placeholder-value
+      pattern: '(?i)(example|sample|dummy|placeholder|changeme|your[_\-]?|my[_\-]?|foo|bar|test|fake|redacted|xxxx+|0{8,}|1234567890|abcdef)'
+      score: -60
+      reason: 값 자체가 플레이스홀더 문구를 포함
+
+  # [코드로 구현할 감점 규칙]
+  # - 같은 문자 8회 이상 반복(마스킹된 값 추정): 백레퍼런스가 필요해 RE2로 표현 불가하므로
+  #   정규식 룰이 아닌 FP Filter 코드에서 직접 검사한다.
+
+  # 특정 룰/파일/값을 명시적으로 무시 (스캔 후 확인된 오탐 등록용)
+  allowlist:
+    rule_ids: []
+    paths: []
+    secrets: []

@@ -1,0 +1,21 @@
+# 빌드 산출물
+/secrethound
+/secrethound.exe
+/bin/
+/dist/
+
+# 테스트/커버리지
+*.out
+*.test
+
+# 스캔 결과물
+*.report.json
+
+# 에디터
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
