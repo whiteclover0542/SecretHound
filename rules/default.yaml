@@ -35,6 +35,18 @@ rules:
     entropy: 4.2
     tags: [aws, cloud]
 
+  # terraform/보일러플레이트 설정에서는 `secret_key = "..."` 처럼 줄에 aws 접두사가 없다.
+  # 위 룰이 이런 형태를 놓치면 범용 룰이 대신 잡아 심각도가 낮게 보고되므로 별도 룰로 처리한다.
+  # 길이 40의 base64 + 높은 엔트로피는 AWS 시크릿 키의 고유 특성이라 오탐 위험이 낮다.
+  - id: aws-secret-access-key-bare
+    description: AWS Secret Access Key (aws 접두사 없는 secret_key 형태)
+    severity: critical
+    keywords: [secret_key, secret-key, secretkey, secret_access_key]
+    regex: '(?i)\b(secret[_\-. ]?access[_\-. ]?key|secret[_\-. ]?key)\b[^a-zA-Z0-9]{0,20}[''"]([A-Za-z0-9/+=]{40})[''"]'
+    secret_group: 2
+    entropy: 4.2
+    tags: [aws, cloud]
+
   - id: aws-session-token
     description: AWS Session Token
     severity: high
@@ -118,13 +130,8 @@ rules:
     secret_group: 1
     tags: [stripe, payment]
 
-  - id: stripe-publishable-key
-    description: Stripe Publishable Key (공개용이나 오탐 구분 목적으로 룰 유지)
-    severity: low
-    keywords: [pk_live_]
-    regex: '\b(pk_live_[0-9A-Za-z]{24,99})\b'
-    secret_group: 1
-    tags: [stripe, payment, public-by-design]
+  # Stripe publishable key(pk_live_)는 클라이언트에 노출되도록 설계된 공개값이라
+  # 룰에서 제외한다. 평가 코퍼스에서 오탐만 만들고 탐지 가치가 없음을 확인했다.
 
   # ---------------------------------------------------------------- Google
   - id: google-api-key
@@ -135,13 +142,7 @@ rules:
     secret_group: 1
     tags: [google, cloud]
 
-  - id: google-oauth-client-id
-    description: Google OAuth Client ID (공개 식별자, 시크릿 동반 여부 확인용)
-    severity: low
-    keywords: [apps.googleusercontent.com]
-    regex: '\b([0-9]+-[0-9a-z_]{32}\.apps\.googleusercontent\.com)\b'
-    secret_group: 1
-    tags: [google, oauth, public-by-design]
+  # Google OAuth Client ID도 같은 이유로 제외한다. 공개 식별자이며 그 자체로는 유출이 아니다.
 
   - id: gcp-service-account-key
     description: GCP Service Account Private Key (JSON 키 파일 내 private_key 필드)
@@ -378,6 +379,14 @@ filter:
       builtin: repeated-chars
       score: -50
       reason: 같은 문자가 8회 이상 반복되어 마스킹된 값으로 추정됨
+
+    # 로컬 엔드포인트를 가리키는 접속 문자열은 개발용 설정이지 유출된 자격증명이 아니다.
+    # 경로 기반 감점보다 일반적으로 적용되므로 .env.example 외의 위치에서도 동작한다.
+    - id: local-endpoint
+      target: value
+      pattern: '(?i)@(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])[:/]'
+      score: -60
+      reason: 로컬 개발 엔드포인트를 가리키는 접속 문자열
 
   # 특정 룰/파일/값을 명시적으로 무시 (스캔 후 확인된 오탐 등록용)
   allowlist:

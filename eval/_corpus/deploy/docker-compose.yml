@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  api:
+    image: myorg/api:1.4.2
+    environment:
+      DATABASE_URL: "postgresql://api_user:h7Kd9mQp2XvRt4Bn@db.internal:5432/production"
+      REDIS_URL: "redis://cache.internal:6379"
+      LOG_LEVEL: "info"
+    ports:
+      - "8080:8080"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: api_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

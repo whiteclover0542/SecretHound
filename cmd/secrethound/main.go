@@ -7,12 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 	secrethound "github.com/whiteclover0542/secrethound"
-	"github.com/whiteclover0542/secrethound/internal/collector"
 	"github.com/whiteclover0542/secrethound/internal/config"
-	"github.com/whiteclover0542/secrethound/internal/detector"
-	"github.com/whiteclover0542/secrethound/internal/filter"
-	"github.com/whiteclover0542/secrethound/internal/finding"
 	"github.com/whiteclover0542/secrethound/internal/reporter"
+	"github.com/whiteclover0542/secrethound/internal/scanner"
 )
 
 var version = "dev"
@@ -76,51 +73,23 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 
-			det := detector.New(rs.Rules)
-			col := collector.New(&rs.Filter)
-			var findings []finding.Finding
-
-			stats, err := col.WalkTree(target, func(s collector.Source) error {
-				findings = append(findings, det.Scan(detector.Location{Path: s.Path}, s.Content)...)
-				return nil
+			result, err := scanner.Run(rs, scanner.Options{
+				Target:     target,
+				History:    history,
+				MaxCommits: maxCommits,
 			})
 			if err != nil {
 				return err
 			}
 
-			var histStats collector.HistoryStats
-			if history {
-				histStats, err = col.WalkHistory(target,
-					collector.HistoryOptions{MaxCommits: maxCommits},
-					func(ch collector.Change) error {
-						loc := detector.Location{
-							Path:   ch.Path,
-							Commit: ch.Commit,
-							Author: ch.Author,
-							Date:   ch.Date,
-						}
-						findings = append(findings, det.ScanLine(loc, ch.Line, ch.LineNo)...)
-						return nil
-					})
-				if err != nil {
-					return err
-				}
-			}
-
-			fp, err := filter.New(&rs.Filter)
-			if err != nil {
-				return err
-			}
-			findings, fpStats := fp.Apply(findings)
-
 			report := reporter.Build(reporter.Input{
 				Target:         target,
 				Version:        version,
-				Findings:       findings,
-				FilesScanned:   stats.Scanned,
-				FilesSkipped:   stats.Skipped,
-				CommitsScanned: histStats.Commits,
-				FilteredOut:    fpStats.Filtered + fpStats.Allowlist,
+				Findings:       result.Findings,
+				FilesScanned:   result.FilesScanned,
+				FilesSkipped:   result.FilesSkipped,
+				CommitsScanned: result.CommitsScanned,
+				FilteredOut:    result.FilteredOut,
 				Duration:       time.Since(started),
 			})
 
@@ -143,7 +112,7 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 
-			if useExit && len(findings) > 0 {
+			if useExit && len(result.Findings) > 0 {
 				os.Exit(exitFindings)
 			}
 			return nil

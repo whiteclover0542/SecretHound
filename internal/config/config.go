@@ -17,6 +17,22 @@ const (
 	SeverityLow      Severity = "low"
 )
 
+var severityRank = map[Severity]int{
+	SeverityCritical: 0,
+	SeverityHigh:     1,
+	SeverityMedium:   2,
+	SeverityLow:      3,
+}
+
+// SeverityRank는 심각도 순위를 돌려준다. 값이 작을수록 심각하다.
+// 알 수 없는 값은 가장 낮은 순위로 취급한다.
+func SeverityRank(s Severity) int {
+	if r, ok := severityRank[s]; ok {
+		return r
+	}
+	return len(severityRank)
+}
+
 type Ruleset struct {
 	Version int     `yaml:"version"`
 	Rules   []Rule  `yaml:"rules"`

@@ -45,18 +45,11 @@ type Input struct {
 	Duration       time.Duration
 }
 
-var severityRank = map[config.Severity]int{
-	config.SeverityCritical: 0,
-	config.SeverityHigh:     1,
-	config.SeverityMedium:   2,
-	config.SeverityLow:      3,
-}
-
 func Build(in Input) Report {
 	findings := append([]finding.Finding(nil), in.Findings...)
 	sort.SliceStable(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
-		if ra, rb := rank(a.Severity), rank(b.Severity); ra != rb {
+		if ra, rb := config.SeverityRank(a.Severity), config.SeverityRank(b.Severity); ra != rb {
 			return ra < rb
 		}
 		if a.Path != b.Path {
@@ -65,7 +58,7 @@ func Build(in Input) Report {
 		return a.Line < b.Line
 	})
 
-	bySeverity := make(map[string]int, len(severityRank))
+	bySeverity := make(map[string]int)
 	for _, f := range findings {
 		bySeverity[string(f.Severity)]++
 	}
@@ -161,13 +154,6 @@ func shortCommit(hash string) string {
 		return hash[:7]
 	}
 	return hash
-}
-
-func rank(s config.Severity) int {
-	if r, ok := severityRank[s]; ok {
-		return r
-	}
-	return len(severityRank)
 }
 
 // severityLabel은 색상 코드가 정렬 폭 계산에 끼어들지 않도록

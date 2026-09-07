@@ -1,0 +1,108 @@
+# 평가 코퍼스 정답 레이블 (ground truth)
+#
+# secrets : 실제 유출된 자격증명. 스캐너가 반드시 탐지해야 한다.
+# traps   : 시크릿처럼 보이지만 실제로는 아닌 값. 탐지하면 오탐이다.
+#
+# 레이블에 없는 줄은 전부 "시크릿 아님"으로 간주한다.
+# traps는 채점에 직접 쓰이지 않지만(비레이블 줄과 동일하게 음성),
+# 어떤 오탐 케이스를 의도적으로 넣었는지 문서화하고 도구별 함정 통과율을 보기 위해 기록한다.
+#
+# 판정 기준
+# - "공개되도록 설계된 값"(Stripe publishable key, Google OAuth client ID, SRI 해시)은
+#   유출이 아니므로 시크릿이 아니다. 탐지하면 오탐으로 센다.
+# - 형식만 맞고 값이 플레이스홀더/더미인 경우도 시크릿이 아니다.
+
+version: 1
+
+cases:
+  # ---------------------------------------------------------------- 실제 시크릿
+  - path: terraform/main.tf
+    secrets:
+      - { line: 3, kind: aws-access-key-id, note: 실제 형식의 AWS 액세스 키 ID }
+      - { line: 4, kind: aws-secret-access-key-bare, note: "HCL의 secret_key 필드. 줄 자체에 aws 접두사가 없어 aws 키워드 기반 룰로는 잡히지 않는다" }
+
+  - path: src/config.js
+    secrets:
+      - { line: 6, kind: github-pat, note: GitHub Personal Access Token }
+      - { line: 7, kind: slack-webhook, note: Slack Incoming Webhook URL }
+
+  - path: deploy/docker-compose.yml
+    secrets:
+      - { line: 7, kind: db-connection-string, note: 비밀번호가 포함된 운영 DB 접속 문자열 }
+
+  - path: src/payments.py
+    secrets:
+      - { line: 3, kind: stripe-secret-key, note: Stripe 라이브 시크릿 키 }
+    traps:
+      - { line: 4, note: "Stripe publishable key. 클라이언트에 노출되도록 설계된 공개값" }
+
+  - path: src/ai_client.go
+    secrets:
+      - { line: 6, kind: openai-api-key, note: OpenAI API 키 }
+      - { line: 7, kind: anthropic-api-key, note: Anthropic API 키 }
+
+  - path: scripts/notify.sh
+    secrets:
+      - { line: 4, kind: slack-token, note: Slack Bot Token }
+
+  - path: keys/deploy_key
+    secrets:
+      - { line: 1, kind: private-key, note: OpenSSH 개인키 (PEM 헤더 기준) }
+
+  - path: ci/publish.yml
+    secrets:
+      - { line: 11, kind: npm-access-token, note: CI에 하드코딩된 npm 토큰 }
+      - { line: 12, kind: gitlab-pat, note: CI에 하드코딩된 GitLab PAT }
+
+  - path: src/mailer.rb
+    secrets:
+      - { line: 3, kind: sendgrid-api-key, note: SendGrid API 키 }
+
+  # ---------------------------------------------------------------- 오탐 유발 케이스
+  - path: .env.example
+    secrets: []
+    traps:
+      - { line: 1, note: 템플릿 DB 접속 문자열 (user:password) }
+      - { line: 2, note: "AKIA + X 반복 플레이스홀더" }
+      - { line: 3, note: "your-...-here 형태 플레이스홀더" }
+      - { line: 4, note: "ghp_ + x 반복 플레이스홀더" }
+      - { line: 5, note: "sk_live_ + x 반복 플레이스홀더" }
+      - { line: 6, note: "xoxb + 0 반복 플레이스홀더" }
+
+  - path: test/client_test.go
+    secrets: []
+    traps:
+      - { line: 7, note: 테스트 파일의 0 반복 더미 토큰 }
+      - { line: 14, note: "테스트 파일의 EXAMPLE 더미 키" }
+
+  - path: docs/setup.md
+    secrets: []
+    traps:
+      - { line: 8, note: "AWS 공식 문서의 예시 키 AKIAIOSFODNN7EXAMPLE" }
+      - { line: 9, note: "문서의 YOUR_TOKEN_HERE 형식 안내" }
+      - { line: 10, note: "문서의 CHANGEME 형식 안내" }
+
+  - path: src/utils.js
+    secrets: []
+    traps:
+      - { line: 3, note: git 커밋 해시 (40자 hex) }
+      - { line: 4, note: UUID v4 }
+      - { line: 5, note: SHA-256 해시 }
+      - { line: 6, note: MD5 기반 캐시 키 }
+      - { line: 9, note: base64 인코딩된 이미지 데이터 }
+      - { line: 11, note: base64 형태의 CSP nonce 샘플 }
+
+  - path: src/public_config.js
+    secrets: []
+    traps:
+      - { line: 4, note: "Stripe publishable key (공개 설계)" }
+      - { line: 5, note: "Google OAuth Client ID (공개 식별자)" }
+      - { line: 6, note: "Sentry DSN (클라이언트에 embed되는 공개값)" }
+      - { line: 7, note: "GA 측정 ID (공개값)" }
+
+  - path: src/integrity.js
+    secrets: []
+    traps:
+      - { line: 5, note: "SRI sha512 무결성 해시 (공개값)" }
+      - { line: 7, note: "SRI sha384 무결성 해시 (공개값)" }
+      - { line: 9, note: "문서용 예시 JWT (서명이 더미)" }

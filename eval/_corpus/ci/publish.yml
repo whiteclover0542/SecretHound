@@ -1,0 +1,17 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: "npm_9mNxP4wZ8sT1yB6cH0jL5dF9gA3eU7iO2pXk"
+      GITLAB_TOKEN: "glpat-9mNxP4wZ8sT1yB6cH0jL"
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm publish
