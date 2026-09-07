@@ -104,8 +104,27 @@ func main() {
 		tool       = flag.String("tool", "secrethound", "측정 대상 (secrethound | gitleaks)")
 		rulesPath  = flag.String("rules", "", "secrethound 룰셋 경로 (기본: 내장 룰셋)")
 		markdown   = flag.Bool("markdown", false, "결과를 마크다운 표로 출력")
+		coverage   = flag.Bool("coverage", false, "코퍼스가 어떤 룰을 검증하는지 출력")
+		history    = flag.Bool("history", false, "git 히스토리 스캔 시나리오 평가")
+		historyDef = flag.String("history-spec", "eval/history.yaml", "히스토리 시나리오 정의 파일")
 	)
 	flag.Parse()
+
+	if *history {
+		if err := runHistoryEval(*historyDef, *rulesPath); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *coverage {
+		if err := printCoverage(*corpusPath, *rulesPath); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(2)
+		}
+		return
+	}
 
 	labels, traps, err := loadLabels(*labelsPath, *corpusPath)
 	if err != nil {
@@ -204,6 +223,45 @@ func runSecrethound(corpusPath, rulesPath string) (map[location]prediction, erro
 		}
 	}
 	return predictions, nil
+}
+
+// printCoverage는 코퍼스가 실제로 검증하는 룰과 그렇지 않은 룰을 보여준다.
+// 한 번도 발동하지 않은 룰은 정규식이 틀려도 알 수 없는 상태이므로 코퍼스 보강 대상이다.
+//
+// 판정 기준은 "최종 결과에 나타났는가"다. 매칭은 됐지만 오탐 필터나 중복 제거로
+// 사라진 룰은 실제 사용자에게 도달하지 않으므로 검증된 것으로 보지 않는다.
+func printCoverage(corpusPath, rulesPath string) error {
+	rs, err := loadRuleset(rulesPath)
+	if err != nil {
+		return err
+	}
+
+	result, err := scanner.Run(rs, scanner.Options{Target: corpusPath})
+	if err != nil {
+		return err
+	}
+
+	hits := make(map[string]int)
+	for _, f := range result.Findings {
+		hits[f.RuleID]++
+	}
+
+	var covered, uncovered []string
+	for _, r := range rs.Rules {
+		if hits[r.ID] > 0 {
+			covered = append(covered, fmt.Sprintf("  %-30s %d건", r.ID, hits[r.ID]))
+			continue
+		}
+		uncovered = append(uncovered, fmt.Sprintf("  %-30s %s", r.ID, r.Description))
+	}
+
+	fmt.Printf("룰 커버리지: %d / %d\n\n", len(covered), len(rs.Rules))
+	fmt.Printf("검증됨 (%d)\n%s\n", len(covered), strings.Join(covered, "\n"))
+	if len(uncovered) > 0 {
+		fmt.Printf("\n미검증 (%d) — 코퍼스에 해당 케이스가 없어 한 번도 실행되지 않음\n%s\n",
+			len(uncovered), strings.Join(uncovered, "\n"))
+	}
+	return nil
 }
 
 func loadRuleset(path string) (*config.Ruleset, error) {

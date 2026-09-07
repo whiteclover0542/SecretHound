@@ -30,7 +30,11 @@ rules:
     description: AWS Secret Access Key (키워드 컨텍스트 기반)
     severity: critical
     keywords: [aws, secret]
-    regex: '(?i)aws[_\-. ]?(secret[_\-. ]?)?(access[_\-. ]?)?key[^a-zA-Z0-9]{0,20}[''"]([A-Za-z0-9/+=]{40})[''"]'
+    # ~/.aws/credentials 는 INI 형식이라 값에 따옴표가 없다. 따옴표를 필수로 두면
+    # 가장 흔한 AWS 자격증명 파일을 통째로 놓친다.
+    # 대신 40자 뒤에 같은 문자 클래스가 이어지지 않도록 경계를 둬서 더 긴 토큰의
+    # 일부를 잘라 잡는 일을 줄인다. (RE2는 lookahead가 없어 경계 문자를 소비한다)
+    regex: '(?i)aws[_\-. ]?(secret[_\-. ]?)?(access[_\-. ]?)?key[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9/+=]{40})(?:[^A-Za-z0-9/+=]|$)'
     secret_group: 3
     entropy: 4.2
     tags: [aws, cloud]
@@ -42,7 +46,7 @@ rules:
     description: AWS Secret Access Key (aws 접두사 없는 secret_key 형태)
     severity: critical
     keywords: [secret_key, secret-key, secretkey, secret_access_key]
-    regex: '(?i)\b(secret[_\-. ]?access[_\-. ]?key|secret[_\-. ]?key)\b[^a-zA-Z0-9]{0,20}[''"]([A-Za-z0-9/+=]{40})[''"]'
+    regex: '(?i)\b(secret[_\-. ]?access[_\-. ]?key|secret[_\-. ]?key)\b[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9/+=]{40})(?:[^A-Za-z0-9/+=]|$)'
     secret_group: 2
     entropy: 4.2
     tags: [aws, cloud]
@@ -51,7 +55,7 @@ rules:
     description: AWS Session Token
     severity: high
     keywords: [aws_session_token, x-amz-security-token]
-    regex: '(?i)(aws[_\-.]?session[_\-.]?token|x-amz-security-token)[^a-zA-Z0-9]{0,20}[''"]([A-Za-z0-9/+=]{100,})[''"]'
+    regex: '(?i)(aws[_\-.]?session[_\-.]?token|x-amz-security-token)[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9/+=]{100,})'
     secret_group: 2
     tags: [aws, cloud]
 
@@ -122,13 +126,9 @@ rules:
     secret_group: 1
     tags: [stripe, payment]
 
-  - id: stripe-test-key
-    description: Stripe Test Key (실제 피해는 없으나 위생상 탐지)
-    severity: low
-    keywords: [sk_test_, rk_test_]
-    regex: '\b((sk|rk)_test_[0-9A-Za-z]{24,99})\b'
-    secret_group: 1
-    tags: [stripe, payment]
+  # Stripe 테스트 키(sk_test_)는 룰에서 제외한다.
+  # 실제 결제가 불가능해 유출 피해가 없고, 값에 test 가 들어가 플레이스홀더 감점에
+  # 항상 걸려 리포트에 도달하지 못한다. 도달 불가능한 룰은 커버리지 착시만 만든다.
 
   # Stripe publishable key(pk_live_)는 클라이언트에 노출되도록 설계된 공개값이라
   # 룰에서 제외한다. 평가 코퍼스에서 오탐만 만들고 탐지 가치가 없음을 확인했다.
@@ -189,8 +189,11 @@ rules:
     description: Twilio API Key SID
     severity: high
     keywords: [SK, twilio]
-    regex: '(?i)twilio[^a-zA-Z0-9]{0,20}(SK[0-9a-fA-F]{32})'
-    secret_group: 1
+    # TWILIO_API_KEY= 처럼 단어가 이어지는 형태를 허용한다 (heroku 룰과 동일한 이유).
+    # 값 자체(SK+32hex)만으로는 시크릿이라 단정할 수 없어 twilio 컨텍스트는 유지한다.
+    # 그 결과 키 이름과 값이 다른 줄에 있으면 매칭되지 않는다 (줄 단위 스캔의 한계).
+    regex: '(?i)twilio[_\-. ]?(api[_\-. ]?)?(key|sid|token)?[^a-zA-Z0-9]{0,20}[''"]?(SK[0-9a-fA-F]{32})'
+    secret_group: 3
     tags: [twilio, saas]
 
   - id: npm-access-token
@@ -213,8 +216,10 @@ rules:
     description: Discord Bot Token
     severity: high
     keywords: [discord]
-    regex: '(?i)discord[^a-zA-Z0-9]{0,20}([MNO][A-Za-z0-9\-_]{23}\.[A-Za-z0-9\-_]{6}\.[A-Za-z0-9\-_]{27})'
-    secret_group: 1
+    # discordBotToken 처럼 변수명이 camelCase로 이어지는 경우가 흔하므로
+    # discord 뒤에 bot/token 단어가 붙는 것을 허용한다.
+    regex: '(?i)discord[_\-. ]?(bot)?[_\-. ]?(token)?[^a-zA-Z0-9]{0,20}([MNO][A-Za-z0-9\-_]{23}\.[A-Za-z0-9\-_]{6}\.[A-Za-z0-9\-_]{27})'
+    secret_group: 3
     tags: [discord, messaging]
 
   - id: telegram-bot-token
@@ -263,8 +268,9 @@ rules:
     description: Heroku API Key
     severity: high
     keywords: [heroku]
-    regex: '(?i)heroku[^a-zA-Z0-9]{0,20}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
-    secret_group: 1
+    # HEROKU_API_KEY= 처럼 단어가 이어지는 형태가 실제로 가장 흔하다.
+    regex: '(?i)heroku[_\-. ]?(api[_\-. ]?)?(key|token)[^a-zA-Z0-9]{0,20}[''"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
+    secret_group: 3
     tags: [heroku, cloud]
 
   # ---------------------------------------------------------------- 일반 패턴

@@ -88,7 +88,8 @@ CI가 "시크릿 발견"과 "도구 실행 실패"를 구분할 수 있도록 �
 
 AWS, GitHub, GitLab, Slack, Stripe, Google/GCP, OpenAI, Anthropic, SendGrid, Twilio,
 npm, Shopify, Discord, Telegram, Azure, Heroku, PEM 개인키, JWT, DB 접속 문자열 등
-**31개 룰**을 기본 제공한다. 전체 목록은 `secrethound rules` 로 확인할 수 있다.
+**30개 룰**을 기본 제공하며, 전부 평가 코퍼스로 검증되어 있다.
+전체 목록은 `secrethound rules` 로 확인할 수 있다.
 
 Stripe publishable key나 Google OAuth Client ID처럼 **공개되도록 설계된 값은 탐지하지 않는다.**
 유출이 아니므로 보고해봐야 노이즈만 된다 ([평가 결과](eval/README.md) 참조).
@@ -202,16 +203,20 @@ filter:
 
 ## 정확도 측정
 
-레이블된 코퍼스(실제 시크릿 13건 + 오탐 유발 케이스 25건)로 precision/recall을 측정한다.
+레이블된 코퍼스(실제 시크릿 33건 + 오탐 유발 케이스 27건)로 정확도를 측정한다.
 
 ```bash
-go run ./eval
+go run ./eval             # precision / recall / F1
+go run ./eval --coverage  # 룰별 검증 여부
+go run ./eval --history   # 히스토리 스캔 시나리오
 ```
 
-| 시점 | Precision | Recall | F1 |
-|---|---:|---:|---:|
-| 초기 | 0.765 | 1.000 | 0.867 |
-| 개선 후 | 1.000 | 1.000 | 1.000 |
+| 시점 | Precision | Recall | F1 | 룰 커버리지 |
+|---|---:|---:|---:|---:|
+| 초기 | 0.765 | 1.000 | 0.867 | 13 / 31 |
+| 최종 | 1.000 | 1.000 | 1.000 | 30 / 30 |
+
+이 과정에서 오탐 4건과 미탐 4건, 심각도 오분류 1건을 찾아 고쳤다.
 
 > 자체 제작 코퍼스이고 같은 코퍼스를 보며 룰을 고쳤으므로 **과적합된 수치**다.
 > 다른 도구보다 우수하다는 근거가 아니라 **회귀 방지용 기준선**으로 쓴다.

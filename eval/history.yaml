@@ -1,0 +1,69 @@
+# 히스토리 스캔 평가 시나리오
+#
+# 하네스가 이 정의대로 임시 git 레포를 만들어 커밋을 쌓은 뒤,
+# 워킹트리만 스캔한 결과와 --history 로 스캔한 결과를 각각 채점한다.
+#
+# 핵심 검증 대상: "워킹트리에는 없지만 히스토리에는 남아있는 시크릿을 찾아내는가"
+
+version: 1
+
+commits:
+  - message: 초기 설정 추가
+    write:
+      - path: src/config.js
+        content: |
+          const config = {
+            githubToken: "ghp_9mNxP4wZ8sT1yB6cH0jL5dF9gA3eU7iO2pXk",
+            port: 3000,
+          };
+
+          module.exports = config;
+      - path: src/legacy.py
+        content: |
+          import boto3
+
+          AWS_ACCESS_KEY_ID = "AKIA2E0A8F3B244C9986"
+
+
+          def client():
+              return boto3.client("s3")
+
+  - message: 토큰을 환경변수로 이동
+    write:
+      - path: src/config.js
+        content: |
+          const config = {
+            githubToken: process.env.GITHUB_TOKEN,
+            port: 3000,
+          };
+
+          module.exports = config;
+      - path: src/current.js
+        content: |
+          export const stripeKey = "sk_live_51NxK2mQ7vRp8ZtY3wB6cH0j";
+
+  - message: 레거시 모듈 제거
+    delete:
+      - src/legacy.py
+
+# --history 스캔에서 찾아야 하는 것
+history_expected:
+  - path: src/config.js
+    line: 2
+    kind: github-pat
+    note: 1번 커밋에 있었다가 지워진 토큰. 워킹트리에는 없다
+  - path: src/legacy.py
+    line: 3
+    kind: aws-access-key-id
+    note: 파일 자체가 삭제되어 워킹트리에 존재하지 않는다
+  - path: src/current.js
+    line: 1
+    kind: stripe-secret-key
+    note: 지금도 워킹트리에 남아있는 시크릿
+
+# 워킹트리만 스캔했을 때 찾아야 하는 것
+worktree_expected:
+  - path: src/current.js
+    line: 1
+    kind: stripe-secret-key
+    note: 유일하게 현재 파일에 남아있는 시크릿

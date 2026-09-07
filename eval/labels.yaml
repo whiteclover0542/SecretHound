@@ -58,6 +58,60 @@ cases:
     secrets:
       - { line: 3, kind: sendgrid-api-key, note: SendGrid API 키 }
 
+  # 아래 케이스들은 각 룰이 실제 코드에서 어떤 형태로 나타나는지 그대로 옮긴 것이다.
+  # 정규식에 맞춰 쓰면 검증이 아니라 자기 확인이 되므로, 실제 표기를 우선했다.
+  - path: config/aws_credentials.ini
+    secrets:
+      - { line: 3, kind: aws-access-key-id, note: "~/.aws/credentials 형식" }
+      - { line: 4, kind: aws-secret-access-key, note: "INI 형식이라 값에 따옴표가 없다" }
+      - { line: 5, kind: aws-session-token, note: "임시 자격증명 세션 토큰. 역시 따옴표 없음" }
+
+  - path: config/gcp-service-account.json
+    secrets:
+      - { line: 2, kind: gcp-service-account-key, note: "GCP 서비스 계정 키 파일 식별자" }
+      - { line: 5, kind: private-key, note: "JSON 안에 포함된 PEM 개인키" }
+
+  - path: src/integrations.js
+    secrets:
+      - { line: 2, kind: google-api-key, note: Google Maps API 키 }
+      # 알려진 한계: `twilio:` 와 값이 다른 줄에 있어 줄 단위 스캔으로는 연결할 수 없다.
+      # SK+32hex 만으로는 시크릿이라 단정할 수 없어 컨텍스트 요구를 유지하고,
+      # 대신 범용 룰이 잡아내는 것으로 둔다 (탐지는 되나 심각도가 medium).
+      # 같은 줄에 있는 형태는 config/services.env 에서 검증한다.
+      - { line: 4, kind: generic-api-key, note: "Twilio API Key SID. 키 이름과 값이 다른 줄에 있어 벤더 특정 룰이 매칭되지 않는다" }
+      - { line: 7, kind: mailgun-api-key, note: Mailgun API 키 }
+      - { line: 8, kind: discord-bot-token, note: "Discord 봇 토큰. camelCase 키 이름" }
+      - { line: 9, kind: telegram-bot-token, note: Telegram 봇 토큰 }
+
+  - path: src/legacy_client.js
+    secrets:
+      - { line: 2, kind: azure-storage-key, note: Azure Storage 접속 문자열의 AccountKey }
+      - { line: 5, kind: jwt, note: 하드코딩된 서비스 JWT }
+      - { line: 8, kind: basic-auth-header, note: HTTP 헤더에 하드코딩된 Basic 인증 }
+
+  - path: src/commerce.rb
+    secrets:
+      - { line: 1, kind: shopify-access-token, note: Shopify 액세스 토큰 }
+      - { line: 6, kind: generic-api-key, note: "벤더 특정 룰이 없는 OAuth client_secret" }
+    traps:
+      - { line: 2, note: "Stripe 테스트 키. 실제 결제가 불가능해 유출 피해가 없다" }
+
+  - path: src/github_app.js
+    secrets:
+      - { line: 2, kind: github-oauth-token, note: "GitHub App installation 토큰 (ghs_)" }
+      - { line: 4, kind: github-fine-grained-pat, note: GitHub fine-grained PAT }
+      - { line: 6, kind: slack-app-token, note: Slack App-Level 토큰 }
+
+  - path: deploy/release.sh
+    secrets:
+      - { line: 4, kind: heroku-api-key, note: "쉘 변수 형태의 Heroku API 키" }
+
+  - path: config/services.env
+    secrets:
+      - { line: 3, kind: twilio-api-key, note: "키 이름과 값이 같은 줄에 있는 형태" }
+    traps:
+      - { line: 2, note: "Twilio Account SID는 식별자이지 자격증명이 아니다" }
+
   # ---------------------------------------------------------------- 오탐 유발 케이스
   - path: .env.example
     secrets: []
