@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -217,7 +218,7 @@ func runSecrethound(corpusPath, rulesPath string) (map[location]prediction, erro
 		return nil, err
 	}
 
-	result, err := scanner.Run(rs, scanner.Options{Target: corpusPath})
+	result, err := scanner.Run(context.Background(), rs, scanner.Options{Target: corpusPath})
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +244,7 @@ func printCoverage(corpusPath, rulesPath string) error {
 		return err
 	}
 
-	result, err := scanner.Run(rs, scanner.Options{Target: corpusPath})
+	result, err := scanner.Run(context.Background(), rs, scanner.Options{Target: corpusPath})
 	if err != nil {
 		return err
 	}

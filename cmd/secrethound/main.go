@@ -10,6 +10,7 @@ import (
 	"github.com/whiteclover0542/secrethound/internal/config"
 	"github.com/whiteclover0542/secrethound/internal/reporter"
 	"github.com/whiteclover0542/secrethound/internal/scanner"
+	"github.com/whiteclover0542/secrethound/internal/validator"
 )
 
 var version = "dev"
@@ -42,14 +43,16 @@ func rootCmd() *cobra.Command {
 
 func scanCmd() *cobra.Command {
 	var (
-		rulesPath  string
-		format     string
-		outputPath string
-		noColor    bool
-		useExit    bool
-		history    bool
-		maxCommits int
-		reportPath string
+		rulesPath   string
+		format      string
+		outputPath  string
+		noColor     bool
+		useExit     bool
+		history     bool
+		maxCommits  int
+		reportPath  string
+		validate    bool
+		validateTTL time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -74,10 +77,14 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := scanner.Run(rs, scanner.Options{
+			result, err := scanner.Run(cmd.Context(), rs, scanner.Options{
 				Target:     target,
 				History:    history,
 				MaxCommits: maxCommits,
+				Validate: scanner.ValidateOptions{
+					Enabled: validate,
+					Timeout: validateTTL,
+				},
 			})
 			if err != nil {
 				return err
@@ -91,6 +98,8 @@ func scanCmd() *cobra.Command {
 				FilesSkipped:   result.FilesSkipped,
 				CommitsScanned: result.CommitsScanned,
 				FilteredOut:    result.FilteredOut,
+				Validated:      result.Validated,
+				Validation:     result.Validation,
 				Duration:       time.Since(started),
 			})
 
@@ -136,6 +145,12 @@ func scanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&history, "history", false, "git 커밋 히스토리까지 스캔 (과거에 지운 시크릿 탐지)")
 	cmd.Flags().IntVar(&maxCommits, "max-commits", 0, "히스토리 스캔 대상 커밋 수 제한 (0 = 전체)")
 	cmd.Flags().StringVar(&reportPath, "report", "", "일반 출력과 별개로 JSON 리포트를 저장할 경로")
+	// 탐지한 자격증명을 발급처로 내보내는 기능이라 기본값은 반드시 false여야 한다.
+	// 사용자가 스캔 대상 레포의 키를 외부로 보내도 되는지 판단할 기회를 뺏으면 안 된다.
+	cmd.Flags().BoolVar(&validate, "validate", false,
+		"탐지한 키가 살아있는지 발급처 API에 확인 (네트워크 사용, 기본 비활성)")
+	cmd.Flags().DurationVar(&validateTTL, "validate-timeout", 5*time.Second,
+		"검증 요청 하나당 제한 시간")
 	return cmd
 }
 
@@ -150,10 +165,21 @@ func rulesCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// 어떤 룰이 --validate 대상인지 미리 알 수 있어야
+			// 사용자가 검증을 켤 가치가 있는지 판단할 수 있다.
+			supported := validator.SupportedRules()
+
+			validatable := 0
 			for _, r := range rs.Rules {
-				fmt.Printf("%-28s %-9s %s\n", r.ID, r.Severity, r.Description)
+				mark := ""
+				if provider, ok := supported[r.ID]; ok {
+					mark = "검증: " + provider
+					validatable++
+				}
+				fmt.Printf("%-28s %-9s %-16s %s\n", r.ID, r.Severity, mark, r.Description)
 			}
-			fmt.Printf("\n총 %d개 룰\n", len(rs.Rules))
+			fmt.Printf("\n총 %d개 룰 (그중 %d개는 --validate 로 생존 확인 가능)\n",
+				len(rs.Rules), validatable)
 			return nil
 		},
 	}

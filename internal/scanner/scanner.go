@@ -1,11 +1,15 @@
 package scanner
 
 import (
+	"context"
+	"time"
+
 	"github.com/whiteclover0542/secrethound/internal/collector"
 	"github.com/whiteclover0542/secrethound/internal/config"
 	"github.com/whiteclover0542/secrethound/internal/detector"
 	"github.com/whiteclover0542/secrethound/internal/filter"
 	"github.com/whiteclover0542/secrethound/internal/finding"
+	"github.com/whiteclover0542/secrethound/internal/validator"
 )
 
 // 수집 → 탐지 → 오탐 필터로 이어지는 스캔 파이프라인.
@@ -16,6 +20,14 @@ type Options struct {
 	Target     string
 	History    bool
 	MaxCommits int
+	Validate   ValidateOptions
+}
+
+// ValidateOptions는 탐지된 키를 발급처에 확인하는 단계를 제어한다.
+// 자격증명을 외부로 내보내는 동작이라 Enabled의 기본값 false를 유지하는 것이 중요하다.
+type ValidateOptions struct {
+	Enabled bool
+	Timeout time.Duration
 }
 
 type Result struct {
@@ -24,9 +36,14 @@ type Result struct {
 	FilesSkipped   int
 	CommitsScanned int
 	FilteredOut    int
+
+	// Validated는 검증 단계를 실제로 돌렸는지를 뜻한다.
+	// 리포트가 "검증 안 함"과 "전부 검증불가"를 구분해 표시하기 위해 필요하다.
+	Validated  bool
+	Validation validator.Stats
 }
 
-func Run(rs *config.Ruleset, opts Options) (Result, error) {
+func Run(ctx context.Context, rs *config.Ruleset, opts Options) (Result, error) {
 	var result Result
 
 	det := detector.New(rs.Rules)
@@ -74,5 +91,31 @@ func Run(rs *config.Ruleset, opts Options) (Result, error) {
 	result.Findings = filter.GroupBySecret(filter.Dedupe(kept))
 	result.FilteredOut = fpStats.Filtered + fpStats.Allowlist
 
+	// 검증은 오탐 필터를 통과한 것만 대상으로 한다.
+	// 걸러낸 후보까지 발급처에 물어보면 네트워크 호출이 몇 배로 늘고,
+	// 무엇보다 리포트에 나오지도 않을 값을 외부로 내보내게 된다.
+	if opts.Validate.Enabled {
+		result.Validation = validateFindings(ctx, result.Findings, opts.Validate)
+		result.Validated = true
+	}
+
 	return result, nil
+}
+
+func validateFindings(ctx context.Context, findings []finding.Finding, opts ValidateOptions) validator.Stats {
+	targets := make([]validator.Target, len(findings))
+	for i, f := range findings {
+		targets[i] = validator.Target{
+			RuleID: f.RuleID,
+			Path:   f.Path,
+			Line:   f.Line,
+			Secret: f.Secret,
+		}
+	}
+
+	results, stats := validator.New(validator.Options{Timeout: opts.Timeout}).Run(ctx, targets)
+	for i := range findings {
+		findings[i].Validation = results[i]
+	}
+	return stats
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -68,11 +69,11 @@ func runHistoryEval(specPath, rulesPath string) error {
 		return err
 	}
 
-	worktree, err := scanner.Run(rs, scanner.Options{Target: repo})
+	worktree, err := scanner.Run(context.Background(), rs, scanner.Options{Target: repo})
 	if err != nil {
 		return fmt.Errorf("워킹트리 스캔 실패: %w", err)
 	}
-	withHistory, err := scanner.Run(rs, scanner.Options{Target: repo, History: true})
+	withHistory, err := scanner.Run(context.Background(), rs, scanner.Options{Target: repo, History: true})
 	if err != nil {
 		return fmt.Errorf("히스토리 스캔 실패: %w", err)
 	}
