@@ -68,7 +68,10 @@ func Run(rs *config.Ruleset, opts Options) (Result, error) {
 	}
 
 	kept, fpStats := fp.Apply(findings)
-	result.Findings = filter.Dedupe(kept)
+
+	// Dedupe: 한 위치에 여러 룰이 걸린 경우를 정리한다.
+	// GroupBySecret: 같은 값이 여러 커밋·줄에 흩어진 경우를 최초 유입 하나로 묶는다.
+	result.Findings = filter.GroupBySecret(filter.Dedupe(kept))
 	result.FilteredOut = fpStats.Filtered + fpStats.Allowlist
 
 	return result, nil

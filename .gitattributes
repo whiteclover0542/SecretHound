@@ -1,0 +1,4 @@
+# Windows에서 core.autocrlf=true 로 체크아웃하면 소스가 CRLF가 되어
+# gofmt 가 모든 파일을 미포맷으로 판정한다. 줄바꿈을 LF로 고정해
+# 로컬과 CI(Linux)의 검사 결과를 일치시킨다.
+* text=auto eol=lf

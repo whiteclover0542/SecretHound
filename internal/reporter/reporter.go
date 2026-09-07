@@ -101,9 +101,9 @@ func WriteText(w io.Writer, r Report, color bool) error {
 	}
 
 	for _, f := range r.Findings {
-		fmt.Fprintf(w, "%s  %-*s  %-*s  %s  (신뢰도 %d)\n",
+		fmt.Fprintf(w, "%s  %-*s  %-*s  %s  (%s)\n",
 			severityLabel(f.Severity, color), locWidth, location(f),
-			ruleWidth, f.RuleID, f.Masked, f.Confidence)
+			ruleWidth, f.RuleID, f.Masked, annotation(f))
 	}
 
 	writeSummary(w, r)
@@ -140,6 +140,19 @@ func severityBreakdown(counts map[string]int) string {
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// annotation은 신뢰도와, 묶인 결과일 때 그 사실을 덧붙인다.
+// 위치가 과거 커밋을 가리키면 지금도 남아있는지가 대응 판단에 중요하므로 함께 표시한다.
+func annotation(f finding.Finding) string {
+	s := fmt.Sprintf("신뢰도 %d", f.Confidence)
+	if f.Occurrences > 1 {
+		s += fmt.Sprintf(", %d곳", f.Occurrences)
+	}
+	if f.Commit != "" && f.InWorktree {
+		s += ", 현재도 존재"
+	}
+	return s
 }
 
 func location(f finding.Finding) string {
