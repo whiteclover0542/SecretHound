@@ -34,7 +34,7 @@ const awsKey = "AKIAIOSFODNN7EXAMPLE"
 token = "ghp_1234567890abcdefghijklmnopqrstuvwxyz"
 `)
 
-	found := ruleIDs(newDetector(t).Scan("config.go", "", content))
+	found := ruleIDs(newDetector(t).Scan(Location{Path: "config.go"}, content))
 
 	aws, ok := found["aws-access-key-id"]
 	if !ok {
@@ -60,20 +60,37 @@ func TestScanRejectsLowEntropyValue(t *testing.T) {
 	d := newDetector(t)
 
 	dummy := []byte(`aws_secret_access_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"`)
-	if fs := d.Scan("dummy.env", "", dummy); len(fs) != 0 {
+	if fs := d.Scan(Location{Path: "dummy.env"}, dummy); len(fs) != 0 {
 		t.Errorf("엔트로피가 낮은 더미 값이 탐지됨: %+v", fs)
 	}
 
 	real := []byte(`aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`)
-	if fs := d.Scan("real.env", "", real); len(fs) == 0 {
+	if fs := d.Scan(Location{Path: "real.env"}, real); len(fs) == 0 {
 		t.Error("정상적인 AWS Secret Key를 탐지하지 못함")
 	}
 }
 
 func TestScanIgnoresPlainText(t *testing.T) {
 	content := []byte("이 문서는 API 키를 커밋하지 말라고 안내하는 평범한 문장입니다.\nREADME 내용입니다.\n")
-	if fs := newDetector(t).Scan("README.md", "", content); len(fs) != 0 {
+	if fs := newDetector(t).Scan(Location{Path: "README.md"}, content); len(fs) != 0 {
 		t.Errorf("평문에서 오탐 발생: %+v", fs)
+	}
+}
+
+// 히스토리 스캔은 diff에서 추출한 줄 하나를 실제 파일 줄 번호와 함께 넘긴다.
+func TestScanLineCarriesCommitMetadata(t *testing.T) {
+	loc := Location{Path: "app.js", Commit: "abc1234", Author: "someone", Date: "2026-01-01T00:00:00+09:00"}
+	line := `const key = "ghp_9mNxP4wZ8sT1yB6cH0jL5dF9gA3eU7iO2pXk";`
+
+	fs := newDetector(t).ScanLine(loc, line, 42)
+	if len(fs) != 1 {
+		t.Fatalf("탐지 건수 = %d, 기대값 1", len(fs))
+	}
+	if fs[0].Line != 42 {
+		t.Errorf("Line = %d, 기대값 42", fs[0].Line)
+	}
+	if fs[0].Commit != "abc1234" || fs[0].Author != "someone" {
+		t.Errorf("커밋 메타데이터가 누락됨: %+v", fs[0])
 	}
 }
 

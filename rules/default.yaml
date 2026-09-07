@@ -338,35 +338,46 @@ filter:
     - .mp4
     - .mp3
 
+  # target: path(파일 경로 검사) | value(탐지된 값 자체 검사)
+  # pattern 대신 builtin을 쓰면 RE2로 표현 불가능한 규칙을 코드 구현으로 위임한다.
   penalties:
     - id: test-path
+      target: path
       pattern: '(^|/)(test|tests|spec|specs|__tests__|testdata|fixtures?)/'
       score: -40
       reason: 테스트 디렉토리의 값은 더미일 가능성이 높음
 
     - id: example-path
+      target: path
       pattern: '(^|/)(examples?|samples?|demos?|docs?)/'
       score: -40
       reason: 예제/문서 디렉토리의 값은 플레이스홀더일 가능성이 높음
 
     - id: test-file-suffix
+      target: path
       pattern: '(_test\.(go|py|js|ts|rb|java)|\.test\.(js|ts|tsx)|\.spec\.(js|ts|tsx))$'
       score: -35
       reason: 테스트 파일
 
     - id: env-example-file
+      target: path
       pattern: '(\.env\.(example|sample|template)|\.env\.dist)$'
       score: -50
       reason: .env 예시 파일은 실제 값이 아닌 템플릿
 
+    # 짧은 단어(my, ab 등)를 넣으면 무작위 문자열에 우연히 포함되어 실제 시크릿을
+    # 놓치게 된다. 미탐은 오탐보다 손해가 크므로 4자 이상 단어만 사용한다.
     - id: placeholder-value
-      pattern: '(?i)(example|sample|dummy|placeholder|changeme|your[_\-]?|my[_\-]?|foo|bar|test|fake|redacted|xxxx+|0{8,}|1234567890|abcdef)'
+      target: value
+      pattern: '(?i)(example|sample|dummy|placeholder|changeme|redacted|fake|test|your[_\-]|xxxx+|0{8,}|1234567890|abcdefgh)'
       score: -60
       reason: 값 자체가 플레이스홀더 문구를 포함
 
-  # [코드로 구현할 감점 규칙]
-  # - 같은 문자 8회 이상 반복(마스킹된 값 추정): 백레퍼런스가 필요해 RE2로 표현 불가하므로
-  #   정규식 룰이 아닌 FP Filter 코드에서 직접 검사한다.
+    - id: repeated-chars
+      target: value
+      builtin: repeated-chars
+      score: -50
+      reason: 같은 문자가 8회 이상 반복되어 마스킹된 값으로 추정됨
 
   # 특정 룰/파일/값을 명시적으로 무시 (스캔 후 확인된 오탐 등록용)
   allowlist:

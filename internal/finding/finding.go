@@ -9,6 +9,8 @@ type Finding struct {
 	Severity    config.Severity `json:"severity"`
 	Path        string          `json:"path"`
 	Commit      string          `json:"commit,omitempty"`
+	Author      string          `json:"author,omitempty"`
+	Date        string          `json:"date,omitempty"`
 	Line        int             `json:"line"`
 	Column      int             `json:"column"`
 	Entropy     float64         `json:"entropy"`

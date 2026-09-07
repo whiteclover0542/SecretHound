@@ -31,49 +31,70 @@ func New(rules []config.Rule) *Detector {
 	return d
 }
 
+// Location은 탐지된 값이 어디서 나왔는지를 나타낸다.
+// 워킹트리 스캔이면 Path만, 히스토리 스캔이면 커밋 정보까지 채워진다.
+type Location struct {
+	Path   string
+	Commit string
+	Author string
+	Date   string
+}
+
 // Scan은 파일 내용을 라인 단위로 훑으며 룰에 매칭되는 시크릿을 찾는다.
-func (d *Detector) Scan(path, commit string, content []byte) []finding.Finding {
+func (d *Detector) Scan(loc Location, content []byte) []finding.Finding {
 	var findings []finding.Finding
 
 	for i, raw := range bytes.Split(content, []byte("\n")) {
 		line := strings.TrimRight(string(raw), "\r")
-		if line == "" {
+		findings = append(findings, d.ScanLine(loc, line, i+1)...)
+	}
+
+	return findings
+}
+
+// ScanLine은 한 줄만 검사한다.
+// 히스토리 스캔은 diff에서 추가된 줄만 뽑아 쓰므로 파일 전체가 아닌 줄 단위로 호출한다.
+func (d *Detector) ScanLine(loc Location, line string, lineNo int) []finding.Finding {
+	if line == "" {
+		return nil
+	}
+
+	var findings []finding.Finding
+	lower := strings.ToLower(line)
+
+	for _, r := range d.rules {
+		// 키워드 프리필터: 정규식 실행 자체를 줄여 스캔 속도를 확보한다.
+		if !r.hasKeyword(lower) {
 			continue
 		}
-		lower := strings.ToLower(line)
 
-		for _, r := range d.rules {
-			// 키워드 프리필터: 정규식 실행 자체를 줄여 스캔 속도를 확보한다.
-			if !r.hasKeyword(lower) {
+		for _, m := range r.cfg.Pattern.FindAllStringSubmatchIndex(line, -1) {
+			secret, start := extractGroup(line, m, r.cfg.SecretGroup)
+			if secret == "" {
 				continue
 			}
 
-			for _, m := range r.cfg.Pattern.FindAllStringSubmatchIndex(line, -1) {
-				secret, start := extractGroup(line, m, r.cfg.SecretGroup)
-				if secret == "" {
-					continue
-				}
-
-				entropy := Shannon(secret)
-				if r.cfg.Entropy > 0 && entropy < r.cfg.Entropy {
-					continue
-				}
-
-				findings = append(findings, finding.Finding{
-					RuleID:      r.cfg.ID,
-					Description: r.cfg.Description,
-					Severity:    r.cfg.Severity,
-					Path:        path,
-					Commit:      commit,
-					Line:        i + 1,
-					Column:      start + 1,
-					Entropy:     entropy,
-					Confidence:  initialConfidence,
-					Tags:        r.cfg.Tags,
-					Secret:      secret,
-					Masked:      Mask(secret),
-				})
+			entropy := Shannon(secret)
+			if r.cfg.Entropy > 0 && entropy < r.cfg.Entropy {
+				continue
 			}
+
+			findings = append(findings, finding.Finding{
+				RuleID:      r.cfg.ID,
+				Description: r.cfg.Description,
+				Severity:    r.cfg.Severity,
+				Path:        loc.Path,
+				Commit:      loc.Commit,
+				Author:      loc.Author,
+				Date:        loc.Date,
+				Line:        lineNo,
+				Column:      start + 1,
+				Entropy:     entropy,
+				Confidence:  initialConfidence,
+				Tags:        r.cfg.Tags,
+				Secret:      secret,
+				Masked:      Mask(secret),
+			})
 		}
 	}
 

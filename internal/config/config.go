@@ -55,9 +55,20 @@ type Filter struct {
 	ExcludePathPatterns []*regexp.Regexp `yaml:"-"`
 }
 
+// 감점 규칙이 무엇을 검사 대상으로 삼는지 구분한다.
+const (
+	TargetPath  = "path"
+	TargetValue = "value"
+)
+
+// 정규식(RE2)으로 표현할 수 없어 코드로 구현하는 규칙의 식별자.
+const BuiltinRepeatedChars = "repeated-chars"
+
 type Penalty struct {
 	ID      string `yaml:"id"`
-	Pattern string `yaml:"pattern"`
+	Target  string `yaml:"target"`  // path | value (기본 path)
+	Pattern string `yaml:"pattern"` // Builtin과 택일
+	Builtin string `yaml:"builtin"` // Pattern과 택일
 	Score   int    `yaml:"score"`
 	Reason  string `yaml:"reason"`
 
@@ -118,6 +129,26 @@ func (rs *Ruleset) compile() error {
 
 	for i := range rs.Filter.Penalties {
 		pen := &rs.Filter.Penalties[i]
+
+		switch pen.Target {
+		case "":
+			pen.Target = TargetPath
+		case TargetPath, TargetValue:
+		default:
+			return fmt.Errorf("penalty %q: 알 수 없는 target %q", pen.ID, pen.Target)
+		}
+
+		if (pen.Pattern == "") == (pen.Builtin == "") {
+			return fmt.Errorf("penalty %q: pattern과 builtin 중 정확히 하나만 지정해야 합니다", pen.ID)
+		}
+
+		if pen.Builtin != "" {
+			if pen.Builtin != BuiltinRepeatedChars {
+				return fmt.Errorf("penalty %q: 지원하지 않는 builtin %q", pen.ID, pen.Builtin)
+			}
+			continue
+		}
+
 		p, err := regexp.Compile(pen.Pattern)
 		if err != nil {
 			return fmt.Errorf("penalty %q: 정규식 컴파일 실패: %w", pen.ID, err)
