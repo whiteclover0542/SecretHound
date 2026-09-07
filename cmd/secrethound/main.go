@@ -49,6 +49,7 @@ func scanCmd() *cobra.Command {
 		useExit    bool
 		history    bool
 		maxCommits int
+		reportPath string
 	)
 
 	cmd := &cobra.Command{
@@ -112,6 +113,14 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 
+			// CI는 사람이 읽는 로그와 기계가 읽는 결과를 동시에 필요로 한다.
+			// 스캔을 두 번 돌리지 않도록 리포트를 별도 파일로도 남긴다.
+			if reportPath != "" {
+				if err := writeReportFile(reportPath, report); err != nil {
+					return err
+				}
+			}
+
 			if useExit && len(result.Findings) > 0 {
 				os.Exit(exitFindings)
 			}
@@ -126,6 +135,7 @@ func scanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&useExit, "exit-code", true, "시크릿 탐지 시 종료 코드 1 반환 (CI 연동용)")
 	cmd.Flags().BoolVar(&history, "history", false, "git 커밋 히스토리까지 스캔 (과거에 지운 시크릿 탐지)")
 	cmd.Flags().IntVar(&maxCommits, "max-commits", 0, "히스토리 스캔 대상 커밋 수 제한 (0 = 전체)")
+	cmd.Flags().StringVar(&reportPath, "report", "", "일반 출력과 별개로 JSON 리포트를 저장할 경로")
 	return cmd
 }
 
@@ -149,6 +159,19 @@ func rulesCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&rulesPath, "rules", "r", "", "룰셋 파일 경로 (기본: 내장 룰셋)")
 	return cmd
+}
+
+func writeReportFile(path string, report reporter.Report) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("리포트 파일 생성 실패: %w", err)
+	}
+	defer f.Close()
+
+	if err := reporter.WriteJSON(f, report); err != nil {
+		return fmt.Errorf("리포트 저장 실패: %w", err)
+	}
+	return nil
 }
 
 func loadRuleset(path string) (*config.Ruleset, error) {

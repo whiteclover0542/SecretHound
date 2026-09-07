@@ -144,13 +144,9 @@ rules:
 
   # Google OAuth Client ID도 같은 이유로 제외한다. 공개 식별자이며 그 자체로는 유출이 아니다.
 
-  - id: gcp-service-account-key
-    description: GCP Service Account Private Key (JSON 키 파일 내 private_key 필드)
-    severity: critical
-    keywords: [service_account, private_key_id]
-    regex: '"type"\s*:\s*"service_account"'
-    secret_group: 0
-    tags: [google, cloud]
+  # GCP 서비스 계정 JSON의 `"type": "service_account"` 는 파일 종류 표시일 뿐
+  # 자격증명이 아니라서 룰에서 제외했다. 이 파일의 실제 시크릿인 private_key 필드는
+  # private-key 룰이 잡는다. 표시 줄을 시크릿으로 보고하면 위치가 틀린 탐지가 된다.
 
   # ---------------------------------------------------------------- AI / SaaS
   - id: openai-api-key

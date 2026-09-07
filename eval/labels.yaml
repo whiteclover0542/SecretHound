@@ -68,8 +68,11 @@ cases:
 
   - path: config/gcp-service-account.json
     secrets:
-      - { line: 2, kind: gcp-service-account-key, note: "GCP 서비스 계정 키 파일 식별자" }
-      - { line: 5, kind: private-key, note: "JSON 안에 포함된 PEM 개인키" }
+      - { line: 5, kind: private-key, note: "JSON 안에 포함된 PEM 개인키. 이 파일의 실제 자격증명" }
+    traps:
+      # 처음에는 이 줄을 시크릿으로 레이블하고 전용 룰을 뒀으나, 이는 자기 룰에 맞춰
+      # 정답을 만든 것이었다. 파일 종류 표시일 뿐 자격증명이 아니므로 되돌렸다.
+      - { line: 2, note: "\"type\": \"service_account\" 는 파일 종류 표시이지 자격증명이 아니다" }
 
   - path: src/integrations.js
     secrets:

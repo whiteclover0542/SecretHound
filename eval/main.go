@@ -153,6 +153,13 @@ func main() {
 		return
 	}
 	printReport(m, labels, traps)
+
+	// CI에서 회귀를 잡으려면 결과가 종료 코드로 드러나야 한다.
+	// 기준선이 완벽한 상태이므로 오탐/미탐/오분류가 하나라도 생기면 실패로 본다.
+	// 고칠 수 없는 사례는 labels.yaml 에 한계로 명시해 기대값 자체를 바꾼다.
+	if *tool == "secrethound" && (m.FP > 0 || m.FN > 0 || len(m.Misclass) > 0) {
+		os.Exit(1)
+	}
 }
 
 // loadLabels는 레이블을 읽고 코퍼스의 모든 파일이 레이블에 등재되어 있는지 검증한다.
@@ -260,6 +267,8 @@ func printCoverage(corpusPath, rulesPath string) error {
 	if len(uncovered) > 0 {
 		fmt.Printf("\n미검증 (%d) — 코퍼스에 해당 케이스가 없어 한 번도 실행되지 않음\n%s\n",
 			len(uncovered), strings.Join(uncovered, "\n"))
+		// 룰만 추가하고 코퍼스 케이스를 빠뜨리는 것을 CI에서 막는다.
+		return fmt.Errorf("검증되지 않은 룰이 %d개 있습니다", len(uncovered))
 	}
 	return nil
 }

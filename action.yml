@@ -1,0 +1,86 @@
+name: secrethound
+description: Git 레포에서 유출된 API 키와 시크릿을 탐지한다
+author: whiteclover0542
+
+branding:
+  icon: search
+  color: red
+
+inputs:
+  path:
+    description: 스캔할 경로
+    required: false
+    default: "."
+  history:
+    description: git 커밋 히스토리까지 스캔할지 여부
+    required: false
+    default: "false"
+  max-commits:
+    description: 히스토리 스캔 대상 커밋 수 제한 (0 = 전체)
+    required: false
+    default: "0"
+  rules:
+    description: 사용자 룰셋 파일 경로 (비우면 내장 룰셋)
+    required: false
+    default: ""
+  fail-on-detection:
+    description: 시크릿 탐지 시 워크플로를 실패시킬지 여부
+    required: false
+    default: "true"
+  report-path:
+    description: JSON 리포트를 저장할 경로 (비우면 저장하지 않음)
+    required: false
+    default: ""
+
+outputs:
+  findings:
+    description: 탐지된 시크릿 건수
+    value: ${{ steps.scan.outputs.findings }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install secrethound
+      shell: bash
+      run: go install github.com/whiteclover0542/secrethound/cmd/secrethound@latest
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_HISTORY: ${{ inputs.history }}
+        INPUT_MAX_COMMITS: ${{ inputs.max-commits }}
+        INPUT_RULES: ${{ inputs.rules }}
+        INPUT_FAIL: ${{ inputs.fail-on-detection }}
+        INPUT_REPORT: ${{ inputs.report-path }}
+      run: |
+        set -uo pipefail
+
+        report="${INPUT_REPORT:-$RUNNER_TEMP/secrethound-report.json}"
+
+        args=("$INPUT_PATH" --no-color --report "$report" --exit-code=false)
+        [ "$INPUT_HISTORY" = "true" ] && args+=(--history)
+        [ "$INPUT_MAX_COMMITS" != "0" ] && args+=(--max-commits "$INPUT_MAX_COMMITS")
+        [ -n "$INPUT_RULES" ] && args+=(--rules "$INPUT_RULES")
+
+        # --exit-code=false 로 두고 탐지 여부는 리포트를 보고 판단한다.
+        # 이렇게 해야 "시크릿 탐지"와 "도구 실행 실패"를 구분할 수 있다.
+        secrethound scan "${args[@]}"
+        status=$?
+        if [ $status -ne 0 ]; then
+          echo "::error::secrethound 실행에 실패했습니다 (종료 코드 $status)"
+          exit 2
+        fi
+
+        count=$(grep -o '"findings": *[0-9]*' "$report" | head -1 | grep -o '[0-9]*$')
+        count="${count:-0}"
+        echo "findings=$count" >> "$GITHUB_OUTPUT"
+
+        if [ "$count" -gt 0 ]; then
+          echo "::error::시크릿 ${count}건이 탐지되었습니다. 노출된 키는 즉시 폐기(revoke)해야 합니다"
+          if [ "$INPUT_FAIL" = "true" ]; then
+            exit 1
+          fi
+        fi
+        exit 0

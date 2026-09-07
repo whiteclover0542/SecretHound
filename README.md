@@ -72,6 +72,7 @@ secrethound rules
 | `-o, --output` | 결과를 파일로 저장 (기본: 표준 출력) |
 | `-r, --rules` | 사용자 룰셋 파일 경로 (기본: 내장 룰셋) |
 | `--no-color` | 색상 출력 비활성화 |
+| `--report` | 일반 출력과 별개로 JSON 리포트를 파일에 저장 |
 | `--exit-code` | 탐지 시 종료 코드 1 반환 (기본 true, CI 연동용) |
 
 ### 종료 코드
@@ -88,7 +89,7 @@ CI가 "시크릿 발견"과 "도구 실행 실패"를 구분할 수 있도록 �
 
 AWS, GitHub, GitLab, Slack, Stripe, Google/GCP, OpenAI, Anthropic, SendGrid, Twilio,
 npm, Shopify, Discord, Telegram, Azure, Heroku, PEM 개인키, JWT, DB 접속 문자열 등
-**30개 룰**을 기본 제공하며, 전부 평가 코퍼스로 검증되어 있다.
+**29개 룰**을 기본 제공하며, 전부 평가 코퍼스로 검증되어 있다.
 전체 목록은 `secrethound rules` 로 확인할 수 있다.
 
 Stripe publishable key나 Google OAuth Client ID처럼 **공개되도록 설계된 값은 탐지하지 않는다.**
@@ -201,26 +202,67 @@ filter:
 }
 ```
 
-## 정확도 측정
+## GitHub Actions
 
-레이블된 코퍼스(실제 시크릿 33건 + 오탐 유발 케이스 27건)로 정확도를 측정한다.
+PR에 시크릿이 들어오면 CI를 실패시킨다.
 
-```bash
-go run ./eval             # precision / recall / F1
-go run ./eval --coverage  # 룰별 검증 여부
-go run ./eval --history   # 히스토리 스캔 시나리오
+```yaml
+name: secret-scan
+
+on: [pull_request]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # --history 를 쓰려면 전체 히스토리가 필요하다
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - uses: whiteclover0542/secrethound@main
+        with:
+          history: "true"
 ```
 
-| 시점 | Precision | Recall | F1 | 룰 커버리지 |
-|---|---:|---:|---:|---:|
-| 초기 | 0.765 | 1.000 | 0.867 | 13 / 31 |
-| 최종 | 1.000 | 1.000 | 1.000 | 30 / 30 |
+| 입력 | 기본값 | 설명 |
+|---|---|---|
+| `path` | `.` | 스캔할 경로 |
+| `history` | `false` | 커밋 히스토리까지 스캔 |
+| `max-commits` | `0` | 히스토리 스캔 커밋 수 제한 |
+| `rules` | (내장 룰셋) | 사용자 룰셋 경로 |
+| `fail-on-detection` | `true` | 탐지 시 워크플로 실패 여부 |
+| `report-path` | (임시 파일) | JSON 리포트 저장 경로 |
 
-이 과정에서 오탐 4건과 미탐 4건, 심각도 오분류 1건을 찾아 고쳤다.
+출력 `findings` 로 탐지 건수를 받을 수 있다.
 
-> 자체 제작 코퍼스이고 같은 코퍼스를 보며 룰을 고쳤으므로 **과적합된 수치**다.
-> 다른 도구보다 우수하다는 근거가 아니라 **회귀 방지용 기준선**으로 쓴다.
-> 측정 방법과 한계는 [eval/README.md](eval/README.md)에 정리했다.
+> `fetch-depth: 0` 을 빠뜨리면 checkout이 얕은 클론을 만들어 `--history` 가
+> 최근 커밋만 보게 된다. 히스토리 스캔을 쓸 때는 반드시 필요하다.
+
+## 정확도 측정
+
+레이블된 코퍼스(실제 시크릿 32건 + 오탐 유발 케이스 28건)로 정확도를 측정한다.
+
+```bash
+go run ./eval                  # precision / recall / F1
+go run ./eval --coverage       # 룰별 검증 여부
+go run ./eval --history        # 히스토리 스캔 시나리오
+go run ./eval --tool gitleaks  # gitleaks 비교
+```
+
+| 도구 | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| secrethound | 1.000 | 1.000 | 1.000 |
+| gitleaks v8.30.1 | 0.875 | 0.875 | 0.875 |
+
+측정 과정에서 오탐 4건, 미탐 5건, 심각도 오분류 1건, 도달 불가능한 룰 1개,
+그리고 **정답 레이블 자체의 오류 1건**을 찾아 고쳤다.
+
+> **이 표를 "더 낫다"로 읽으면 안 된다.** 코퍼스를 직접 만들고 그 코퍼스에 맞춰
+> 룰을 고쳤으므로 과적합이며, 코퍼스에 넣을 서비스도 내 룰셋 위주로 골랐다.
+> 공정한 비교에는 제3자 코퍼스가 필요하다.
+> 편향의 구체적인 내용과 측정 방법은 [eval/README.md](eval/README.md)에 정리했다.
 
 ## 개발
 

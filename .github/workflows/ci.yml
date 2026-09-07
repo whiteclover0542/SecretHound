@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: 포맷 검사
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt 필요:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: 정적 분석
+        run: go vet ./...
+
+      - name: 테스트
+        run: go test ./...
+
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      # 룰을 고쳤을 때 기존 탐지가 깨지지 않는지 확인하는 회귀 방지 장치다.
+      - name: 정확도 측정
+        run: go run ./eval
+
+      # 새 룰을 추가하고 코퍼스 케이스를 빠뜨리면 여기서 드러난다.
+      - name: 룰 커버리지
+        run: go run ./eval --coverage
+
+      - name: 히스토리 스캔 시나리오
+        run: go run ./eval --history
