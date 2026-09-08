@@ -33,7 +33,10 @@ func TestRunReportsValidAndRevoked(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		// GitHub의 실제 인증 거부 응답 형태. classifyWith가 시그니처와 본문까지
+		// 대조하므로, 상태코드만 흉내 내면 이 테스트가 실제 동작을 검증하지 못한다.
 		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"message":"Bad credentials"}`))
 	}))
 
 	targets := []Target{
@@ -292,9 +295,28 @@ func TestClassify(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got, _ := classify(tt.code, nil); got != tt.want {
-			t.Errorf("classify(%d) = %s, want %s", tt.code, got, tt.want)
+		if got, _ := classifyWith(nil, tt.code, nil); got != tt.want {
+			t.Errorf("classifyWith(nil, %d) = %s, want %s", tt.code, got, tt.want)
 		}
+	}
+}
+
+// 요청이 잘못 만들어져도(오타 헤더 등) 발급처는 살아있는 키에 401을 줄 수 있다.
+// 시그니처가 있는 발급처는 상태코드만이 아니라 본문 표식까지 맞아야 폐기로 판정해야
+// 이런 조용한 오작동이 "폐기됨"으로 둔갑하지 않는다.
+func TestClassifyWithSignatureRequiresBodyMatch(t *testing.T) {
+	sig := &signature{code: 401, markers: []string{"Bad credentials"}}
+
+	if got, _ := classifyWith(sig, 401, []byte(`{"message":"Bad credentials"}`)); got != StatusRevoked {
+		t.Errorf("본문이 일치하면 폐기됨이어야 한다: %s", got)
+	}
+
+	got, reason := classifyWith(sig, 401, []byte(`{"message":"something else"}`))
+	if got != StatusUnknown {
+		t.Errorf("401이어도 본문이 다르면 검증불가여야 한다: %s", got)
+	}
+	if !strings.Contains(reason, "검증기 점검") {
+		t.Errorf("이유에 점검 필요 안내가 없음: %q", reason)
 	}
 }
 

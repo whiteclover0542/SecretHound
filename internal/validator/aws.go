@@ -240,7 +240,7 @@ func inspectAWS(code int, body []byte) (Status, string) {
 		return StatusValid, ""
 	}
 	if code != http.StatusForbidden {
-		return classify(code, body)
+		return classifyWith(nil, code, body)
 	}
 
 	var payload struct {

@@ -31,6 +31,7 @@ package validator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -305,11 +306,11 @@ func (v *Validator) attempt(ctx context.Context, p provider, cred credential) (S
 		return StatusUnknown, "레이트리밋", wait
 	}
 
-	inspect := p.inspect
-	if inspect == nil {
-		inspect = classify
+	if p.inspect != nil {
+		status, reason := p.inspect(resp.StatusCode, body)
+		return status, reason, 0
 	}
-	status, reason := inspect(resp.StatusCode, body)
+	status, reason := classifyWith(p.revoked, resp.StatusCode, body)
 	return status, reason, 0
 }
 
@@ -329,25 +330,41 @@ func retryAfter(resp *http.Response) (time.Duration, bool) {
 	return d, true
 }
 
-// classify는 대부분의 API가 공유하는 응답 규약을 상태로 옮긴다.
+// classifyWith는 응답을 상태로 옮긴다.
 //
 // 403을 폐기로 보지 않는 것이 중요하다. GitHub는 레이트리밋과 계정 정지에도 403을 주고,
 // 권한이 모자란 유효한 키도 403을 받는다. 살아있는 키를 죽었다고 보고하는 쪽이
 // 판단 보류보다 훨씬 나쁜 오류라서 403은 전부 검증불가로 남긴다.
-func classify(code int, _ []byte) (Status, string) {
+//
+// sig가 있으면 **그 형태와 정확히 일치할 때만** 폐기로 판정한다.
+// 상태코드는 맞는데 본문이 다르면 검증기 자체가 고장났을 가능성이 있으므로
+// 폐기가 아니라 검증불가로 남긴다. 조용히 틀리는 것보다 모른다고 말하는 편이 낫다.
+func classifyWith(sig *signature, code int, body []byte) (Status, string) {
 	switch {
 	case code >= 200 && code < 300:
 		return StatusValid, ""
-	case code == http.StatusUnauthorized:
-		return StatusRevoked, "발급처가 인증을 거부함"
-	case code == http.StatusForbidden:
-		return StatusUnknown, "403 — 권한 부족·레이트리밋·계정 정지를 구분할 수 없음"
 	case code == http.StatusTooManyRequests:
 		return StatusUnknown, "레이트리밋"
 	case code >= 500:
 		return StatusUnknown, "발급처 서버 오류"
 	}
-	return StatusUnknown, "예상하지 못한 응답 코드"
+
+	if sig == nil {
+		// 실제 응답을 확인하지 못한 발급처. 상태코드만 보고 판정한다.
+		switch code {
+		case http.StatusUnauthorized:
+			return StatusRevoked, "발급처가 인증을 거부함 (응답 형식 미확인)"
+		case http.StatusForbidden:
+			return StatusUnknown, "403 — 권한 부족·레이트리밋·계정 정지를 구분할 수 없음"
+		}
+		return StatusUnknown, "예상하지 못한 응답 코드"
+	}
+
+	if sig.matches(code, body) {
+		return StatusRevoked, "발급처가 인증을 거부함"
+	}
+	return StatusUnknown, fmt.Sprintf(
+		"%d 응답이지만 발급처의 인증 거부 형식과 달라 판단 보류 — 검증기 점검 필요", code)
 }
 
 func (v *Validator) recordNetworkFailure() {

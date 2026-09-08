@@ -25,8 +25,49 @@ type provider struct {
 	name  string
 	label string // 리포트에 표시할 이름
 	build func(ctx context.Context, base string, cred credential) (*http.Request, error)
-	// inspect가 nil이면 classify의 공통 규약을 쓴다.
+	// inspect가 nil이면 classifyWith의 공통 규약을 쓴다.
 	inspect func(code int, body []byte) (Status, string)
+
+	// revoked는 발급처가 "자격증명이 잘못됐다"고 알릴 때의 응답 형태다.
+	//
+	// 상태코드만으로 폐기를 판정하면 위험하다. 요청 자체가 잘못 만들어져 있어도
+	// (헤더 이름 오타, API 버전 누락 등) 발급처는 똑같이 401을 준다.
+	// 그러면 살아있는 키가 "폐기됨"으로 보고되는데, 죽은 키가 나오는 것은
+	// 정상적인 결과처럼 보이므로 아무도 눈치채지 못한다.
+	//
+	// nil이면 아직 실제 응답을 확인하지 못한 발급처라는 뜻이다(상태코드만으로 판정).
+	// `secrethound selfcheck` 로 관찰해 채운다.
+	revoked *signature
+}
+
+// signature는 인증 거부 응답을 알아보는 표식이다.
+// markers가 비어 있으면 발급처가 본문으로 실패를 구분해주지 않는다는 뜻이라
+// 상태코드만으로 판정한다 (npm이 그렇다 — 실패 응답이 빈 JSON이다).
+type signature struct {
+	code    int      // 기대하는 상태코드
+	markers []string // 본문에 하나라도 들어 있어야 하는 문자열
+}
+
+func (s *signature) matches(code int, body []byte) bool {
+	if s.code != code {
+		return false
+	}
+	if len(s.markers) == 0 {
+		return true
+	}
+	text := string(body)
+	for _, m := range s.markers {
+		if strings.Contains(text, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// fake는 형식만 맞는 가짜 값을 만든다.
+// 리터럴로 적으면 소스 자체가 시크릿 스캐너와 push protection에 걸린다.
+func fake(prefix string, n int) string {
+	return prefix + strings.Repeat("0", n)
 }
 
 // ruleProviders는 룰 ID를 검증기에 연결한다.
@@ -119,11 +160,15 @@ func defaultEndpoints() endpoints {
 type endpoints map[string]string
 
 var providers = map[string]provider{
+	// AWS는 잘못된 키에 401이 아니라 403을 준다.
+	// 진짜 응답을 보지 않았다면 짐작으로 놓치기 쉬운 부분이라 selfcheck의 존재 의의를
+	// 잘 보여주는 사례다.
 	"aws": {
 		name:    "aws",
 		label:   "AWS STS",
 		build:   buildAWSRequest,
 		inspect: inspectAWS,
+		revoked: &signature{code: 403, markers: []string{"InvalidClientTokenId"}},
 	},
 
 	"github": {
@@ -138,6 +183,7 @@ var providers = map[string]provider{
 			req.Header.Set("Accept", "application/vnd.github+json")
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"Bad credentials"}},
 	},
 
 	"gitlab": {
@@ -151,6 +197,7 @@ var providers = map[string]provider{
 			req.Header.Set("PRIVATE-TOKEN", c.secret)
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"401 Unauthorized"}},
 	},
 
 	// auth.test는 토큰의 소유자를 알려줄 뿐 아무것도 바꾸지 않는다.
@@ -204,6 +251,7 @@ var providers = map[string]provider{
 			req.SetBasicAuth(c.secret, "")
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"Invalid API Key provided"}},
 	},
 
 	"openai": {
@@ -217,6 +265,7 @@ var providers = map[string]provider{
 			req.Header.Set("Authorization", "Bearer "+c.secret)
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"Incorrect API key provided"}},
 	},
 
 	"anthropic": {
@@ -231,6 +280,7 @@ var providers = map[string]provider{
 			req.Header.Set("anthropic-version", "2023-06-01")
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"authentication_error"}},
 	},
 
 	"sendgrid": {
@@ -244,6 +294,7 @@ var providers = map[string]provider{
 			req.Header.Set("Authorization", "Bearer "+c.secret)
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"unauthorized"}},
 	},
 
 	"mailgun": {
@@ -257,8 +308,11 @@ var providers = map[string]provider{
 			req.SetBasicAuth("api", c.secret)
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"Invalid private key"}},
 	},
 
+	// npm은 잘못된 토큰에도 본문이 빈 JSON({})이라 표식으로 쓸 문자열이 없다.
+	// 상태코드만으로 판정하되, 그 사실을 markers를 비워 명시한다.
 	"npm": {
 		name:  "npm",
 		label: "npm",
@@ -270,6 +324,7 @@ var providers = map[string]provider{
 			req.Header.Set("Authorization", "Bearer "+c.secret)
 			return req, nil
 		},
+		revoked: &signature{code: 401},
 	},
 
 	"discord": {
@@ -283,6 +338,7 @@ var providers = map[string]provider{
 			req.Header.Set("Authorization", "Bot "+c.secret)
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"401: Unauthorized"}},
 	},
 
 	// Telegram만 토큰이 URL 경로에 들어간다.
@@ -293,6 +349,7 @@ var providers = map[string]provider{
 		build: func(ctx context.Context, base string, c credential) (*http.Request, error) {
 			return get(ctx, base+"/bot"+c.secret+"/getMe")
 		},
+		revoked: &signature{code: 401, markers: []string{"invalid token specified"}},
 	},
 
 	"heroku": {
@@ -307,6 +364,7 @@ var providers = map[string]provider{
 			req.Header.Set("Accept", "application/vnd.heroku+json; version=3")
 			return req, nil
 		},
+		revoked: &signature{code: 401, markers: []string{"Invalid credentials provided"}},
 	},
 }
 
@@ -327,7 +385,7 @@ func rebase(base, raw string) (string, error) {
 
 func inspectSlack(code int, body []byte) (Status, string) {
 	if code != http.StatusOK {
-		return classify(code, body)
+		return classifyWith(nil, code, body)
 	}
 
 	var payload struct {
@@ -363,5 +421,5 @@ func inspectSlackWebhook(code int, body []byte) (Status, string) {
 		// 여기 오면 메시지가 실제로 전송됐을 수 있다. 설계상 도달하지 않아야 한다.
 		return StatusValid, ""
 	}
-	return classify(code, body)
+	return classifyWith(nil, code, body)
 }

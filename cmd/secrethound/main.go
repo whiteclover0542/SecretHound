@@ -37,7 +37,63 @@ func rootCmd() *cobra.Command {
 		Short:   "Git 레포에서 유출된 API 키와 시크릿을 탐지하는 도구",
 		Version: version,
 	}
-	cmd.AddCommand(scanCmd(), rulesCmd())
+	cmd.AddCommand(scanCmd(), rulesCmd(), selfcheckCmd())
+	return cmd
+}
+
+func selfcheckCmd() *cobra.Command {
+	var timeout time.Duration
+
+	cmd := &cobra.Command{
+		Use:   "selfcheck",
+		Short: "검증기가 아직 정상인지 확인한다 (실제 자격증명 불필요)",
+		Long: `각 발급처에 형식만 맞는 가짜 키를 보내, 인증 거부 응답의 형태가
+알고 있는 것과 같은지 확인한다.
+
+검증기의 가장 위험한 고장은 조용하다. 요청이 잘못 만들어져 있으면 발급처는
+살아있는 키에도 401을 주고, 리포트에는 "폐기됨"이 찍힌다. 죽은 키가 나오는 것은
+정상적인 결과처럼 보이므로 아무도 이상함을 느끼지 못한다.
+
+성공 경로(살아있는 키 → 유효)는 이 명령으로 확인되지 않는다. 진짜 키가 필요하다.`,
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			results := validator.New(validator.Options{Timeout: timeout}).
+				SelfCheck(cmd.Context())
+
+			var failed, unverified int
+			for _, r := range results {
+				switch {
+				case r.Err != "":
+					fmt.Printf("[오류]   %-16s %s\n", r.Label, r.Err)
+					failed++
+				case !r.HasSignature:
+					fmt.Printf("[미확인] %-16s HTTP %d → %s | %s\n",
+						r.Label, r.Code, r.Status, r.Excerpt)
+					unverified++
+				case r.OK:
+					fmt.Printf("[정상]   %-16s HTTP %d → %s\n", r.Label, r.Code, r.Status)
+				default:
+					fmt.Printf("[불일치] %-16s HTTP %d → %s (%s) | %s\n",
+						r.Label, r.Code, r.Status, r.Reason, r.Excerpt)
+					failed++
+				}
+			}
+
+			fmt.Printf("\n발급처 %d곳 — 정상 %d, 불일치·오류 %d, 형식 미확인 %d\n",
+				len(results), len(results)-failed-unverified, failed, unverified)
+
+			if unverified > 0 {
+				fmt.Println("미확인 항목은 위 응답을 보고 checks.go 의 revoked 시그니처를 채우면 된다.")
+			}
+			if failed > 0 {
+				return fmt.Errorf("검증기 %d곳이 예상과 다르게 동작한다", failed)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "요청 하나당 제한 시간")
 	return cmd
 }
 

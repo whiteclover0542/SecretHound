@@ -1,0 +1,23 @@
+name: validator-selfcheck
+
+# 실제 발급처 API를 호출하므로 매 push/PR이 아니라 별도 스케줄로 돌린다.
+# 레이트리밋이나 일시적 장애로 무관한 PR의 CI가 막히면 안 되기 때문이다.
+# 대신 발급처가 인증 거부 응답 형식을 바꾸면(검증기의 가장 위험한 조용한 고장)
+# 이 워크플로가 며칠 안에 잡아낸다.
+on:
+  schedule:
+    - cron: "0 0 * * 1" # 매주 월요일 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  selfcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: 검증기 셀프체크
+        run: go run ./cmd/secrethound selfcheck
