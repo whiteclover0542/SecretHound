@@ -112,6 +112,7 @@ func scanCmd() *cobra.Command {
 		validateTTL     time.Duration
 		baselinePath    string
 		baselineOutPath string
+		workers         int
 	)
 
 	cmd := &cobra.Command{
@@ -152,6 +153,7 @@ func scanCmd() *cobra.Command {
 				History:    history,
 				MaxCommits: maxCommits,
 				Baseline:   bl,
+				Workers:    workers,
 				Validate: scanner.ValidateOptions{
 					Enabled: validate,
 					Timeout: validateTTL,
@@ -236,6 +238,8 @@ func scanCmd() *cobra.Command {
 		"이 baseline 파일에 있는 시크릿은 결과에서 제외 (신규 항목만 보고)")
 	cmd.Flags().StringVar(&baselineOutPath, "baseline-out", "",
 		"현재 탐지 결과를 baseline 파일로 저장 (--baseline 과 동시 사용 불가)")
+	cmd.Flags().IntVar(&workers, "workers", 0,
+		"정규식 매칭에 쓸 goroutine 수 (0 = CPU 코어 수만큼 자동)")
 	return cmd
 }
 

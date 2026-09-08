@@ -30,6 +30,11 @@ jobs:
       - name: 테스트
         run: go test ./...
 
+      # 스캔 파이프라인이 정규식 매칭을 워커 풀로 병렬 처리한다(internal/scanner).
+      # 로컬(Windows, cgo 툴체인 없음)에서는 -race를 못 돌리므로 CI에서 확인한다.
+      - name: 데이터 경합 검사
+        run: go test -race ./internal/scanner/...
+
   eval:
     runs-on: ubuntu-latest
     steps:

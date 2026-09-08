@@ -24,6 +24,11 @@ type Options struct {
 	Validate   ValidateOptions
 	// Baseline이 있으면 여기 이미 등록된 시크릿은 결과와 검증 대상에서 제외된다.
 	Baseline *baseline.Baseline
+	// Workers는 정규식 매칭에 쓸 goroutine 수다. 0이면 runtime.NumCPU().
+	// 수집·히스토리 파싱 자체는 병렬화하지 않는다 — git log 파싱은 순서에
+	// 의존하는 상태 기반 작업이라 병렬화하면 정확성을 해칠 위험이 크다.
+	// 대신 그 결과로 나온 파일/줄 단위의 정규식 매칭만 워커 풀에 분산시킨다.
+	Workers int
 }
 
 // ValidateOptions는 탐지된 키를 발급처에 확인하는 단계를 제어한다.
@@ -55,20 +60,19 @@ func Run(ctx context.Context, rs *config.Ruleset, opts Options) (Result, error) 
 
 	det := detector.New(rs.Rules)
 	col := collector.New(&rs.Filter)
-	var findings []finding.Finding
+	runner := newJobRunner(det, opts.Workers)
 
-	stats, err := col.WalkTree(opts.Target, func(s collector.Source) error {
-		findings = append(findings, det.Scan(detector.Location{Path: s.Path}, s.Content)...)
+	stats, walkErr := col.WalkTree(opts.Target, func(s collector.Source) error {
+		runner.submit(scanJob{loc: detector.Location{Path: s.Path}, content: s.Content})
 		return nil
 	})
-	if err != nil {
-		return result, err
-	}
 	result.FilesScanned = stats.Scanned
 	result.FilesSkipped = stats.Skipped
 
-	if opts.History {
-		histStats, err := col.WalkHistory(opts.Target,
+	var histStats collector.HistoryStats
+	var histErr error
+	if walkErr == nil && opts.History {
+		histStats, histErr = col.WalkHistory(opts.Target,
 			collector.HistoryOptions{MaxCommits: opts.MaxCommits},
 			func(ch collector.Change) error {
 				loc := detector.Location{
@@ -77,13 +81,19 @@ func Run(ctx context.Context, rs *config.Ruleset, opts Options) (Result, error) 
 					Author: ch.Author,
 					Date:   ch.Date,
 				}
-				findings = append(findings, det.ScanLine(loc, ch.Line, ch.LineNo)...)
+				runner.submit(scanJob{loc: loc, line: ch.Line, lineNo: ch.LineNo, isLine: true})
 				return nil
 			})
-		if err != nil {
-			return result, err
-		}
-		result.CommitsScanned = histStats.Commits
+	}
+	result.CommitsScanned = histStats.Commits
+
+	// 에러가 있어도 워커 풀을 반드시 다 비워야 goroutine이 새지 않는다.
+	findings := runner.finish()
+	if walkErr != nil {
+		return result, walkErr
+	}
+	if histErr != nil {
+		return result, histErr
 	}
 
 	fp, err := filter.New(&rs.Filter)
