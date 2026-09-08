@@ -339,6 +339,8 @@ rules:
     secret_group: 1               # 실제 시크릿이 담긴 캡처 그룹
     entropy: 4.0                  # 매치된 값의 최소 엔트로피 (선택)
     tags: [internal]
+    remediation: >-              # 폐기(revoke) 절차 안내 (선택). 리포트의 "대응 방법" 절에 실린다
+      사내 토큰 발급 시스템에서 해당 서비스 토큰을 즉시 재발급하라.
 
 filter:
   min_confidence: 50
@@ -400,6 +402,8 @@ filter:
         "status": "valid",
         "provider": "GitHub"
       },
+      "remediation": "GitHub → Settings → Developer settings → Personal access tokens에서 해당 토큰을 Delete(폐기).",
+      "history_cleanup": "git filter-repo --path 'config.js' --invert-paths",
       "secret": "ghp_9m******2pXk"
     }
   ]
@@ -411,6 +415,13 @@ filter:
 후자는 검증했는데 판단할 수 없었다는 뜻이다.
 `status` 는 `valid` \| `revoked` \| `unknown` 셋 중 하나이며, 판단 근거가 필요하면
 `reason` 필드에 사람이 읽을 수 있는 설명이 함께 담긴다 (키 값은 절대 들어가지 않는다).
+
+`findings[].remediation` 은 이 종류의 키를 발급처에서 폐기하는 절차 안내다 (룰셋의
+`remediation` 필드에서 옮겨온다). `findings[].history_cleanup` 은 git 히스토리(과거
+커밋)에서 발견된 경우에만 채워지며, 해당 파일을 히스토리 전체에서 제거하는
+`git filter-repo` 명령이다 — **키를 지우기 전에 반드시 먼저 폐기부터** 해야 한다.
+히스토리만 지워도 키 자체는 여전히 유효하기 때문이다. 텍스트 출력에서는 리포트
+맨 아래 "대응 방법" 절에 이 정보가 룰·파일 단위로 한 번씩만 모여서 나온다.
 
 ## GitHub Actions
 

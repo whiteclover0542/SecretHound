@@ -186,6 +186,74 @@ func TestWriteTextShowsValidationSummary(t *testing.T) {
 	}
 }
 
+// 룰별 폐기 절차 안내는 룰당 한 번만 나와야 한다. sampleInput에는 github-pat이
+// 두 건(a.go, z.go) 있는데 안내 문구가 반복되면 리포트가 지저분해진다.
+func TestWriteTextShowsRemediationOncePerRule(t *testing.T) {
+	in := sampleInput()
+	in.Findings[1].Remediation = "GitHub PAT를 Delete 하세요" // z.go, github-pat
+	in.Findings[3].Remediation = "GitHub PAT를 Delete 하세요" // a.go, github-pat (같은 룰)
+	in.Findings[0].Remediation = "JWT 서명 키를 교체하세요"        // b.go, jwt
+
+	var buf bytes.Buffer
+	if err := WriteText(&buf, Build(in), false); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "대응 방법") {
+		t.Errorf("대응 방법 절이 없음:\n%s", out)
+	}
+	if n := strings.Count(out, "GitHub PAT를 Delete 하세요"); n != 1 {
+		t.Errorf("같은 룰의 안내가 %d번 나옴 (1번이어야 함):\n%s", n, out)
+	}
+	if !strings.Contains(out, "JWT 서명 키를 교체하세요") {
+		t.Errorf("jwt 룰의 안내가 없음:\n%s", out)
+	}
+}
+
+// 히스토리에서 발견된 경우에만 git filter-repo 정리 명령과 "먼저 폐기하세요" 경고가
+// 나와야 한다. 워킹트리에만 있는 파일은 그냥 지우면 되므로 필요 없다.
+func TestHistoryCleanupOnlyForHistoryFindings(t *testing.T) {
+	in := sampleInput()
+	in.Findings[1].Commit = "deadbeef" // z.go 만 히스토리에서 발견됨
+
+	r := Build(in)
+
+	for _, f := range r.Findings {
+		wantCleanup := f.Path == "z.go"
+		if got := f.HistoryCleanup != ""; got != wantCleanup {
+			t.Errorf("%s: HistoryCleanup 존재 = %v, 기대값 %v (값=%q)", f.Path, got, wantCleanup, f.HistoryCleanup)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := WriteText(&buf, r, false); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "git filter-repo --path 'z.go' --invert-paths") {
+		t.Errorf("filter-repo 명령 누락:\n%s", out)
+	}
+	if !strings.Contains(out, "먼저 폐기하세요") {
+		t.Errorf("히스토리 발견 시 폐기 우선 경고가 없음:\n%s", out)
+	}
+	if strings.Contains(out, "'a.go'") || strings.Contains(out, "'b.go'") {
+		t.Errorf("워킹트리 전용 파일에 대한 filter-repo 명령이 잘못 생성됨:\n%s", out)
+	}
+}
+
+// 룰에 remediation이 없고 히스토리 발견도 없으면 "대응 방법" 절 자체가 나오면 안 된다.
+func TestWriteTextOmitsRemediationSectionWhenEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteText(&buf, Build(sampleInput()), false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "대응 방법") {
+		t.Errorf("안내할 내용이 없는데 대응 방법 절이 출력됨:\n%s", buf.String())
+	}
+}
+
 func TestWriteTextWarnsWhenOffline(t *testing.T) {
 	in := sampleInput()
 	in.Validated = true

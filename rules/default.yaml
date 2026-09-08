@@ -13,6 +13,8 @@
 #   secret_group: 실제 시크릿 값이 담긴 캡처 그룹 번호 (0 = 전체 매치)
 #   entropy     : 매치된 값의 최소 Shannon 엔트로피. 미달 시 탈락 (선택)
 #   tags        : 분류용 태그
+#   remediation : 이 키를 발급처에서 폐기(revoke)하는 절차 안내. 리포트의 Finding에
+#                 그대로 실린다 (탐지에서 대응까지 연결하는 것이 목적)
 
 version: 1
 
@@ -25,6 +27,9 @@ rules:
     regex: '\b((A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16})\b'
     secret_group: 1
     tags: [aws, cloud]
+    remediation: >-
+      AWS Console → IAM → 사용자 → 보안 자격 증명에서 이 Access Key를 비활성화 후 삭제.
+      짝이 되는 Secret Access Key도 함께 무효화되므로 재발급이 필요하다.
 
   - id: aws-secret-access-key
     description: AWS Secret Access Key (키워드 컨텍스트 기반)
@@ -38,6 +43,10 @@ rules:
     secret_group: 3
     entropy: 4.2
     tags: [aws, cloud]
+    remediation: >-
+      AWS Console → IAM → 사용자 → 보안 자격 증명에서 짝이 되는 Access Key를 찾아 비활성화
+      후 삭제. Secret Access Key 단독으로는 콘솔에서 조회·삭제할 수 없으므로 Access Key ID를
+      함께 찾아야 한다.
 
   # terraform/보일러플레이트 설정에서는 `secret_key = "..."` 처럼 줄에 aws 접두사가 없다.
   # 위 룰이 이런 형태를 놓치면 범용 룰이 대신 잡아 심각도가 낮게 보고되므로 별도 룰로 처리한다.
@@ -50,6 +59,10 @@ rules:
     secret_group: 2
     entropy: 4.2
     tags: [aws, cloud]
+    remediation: >-
+      AWS Console → IAM → 사용자 → 보안 자격 증명에서 짝이 되는 Access Key를 찾아 비활성화
+      후 삭제. Secret Access Key 단독으로는 콘솔에서 조회·삭제할 수 없으므로 Access Key ID를
+      함께 찾아야 한다.
 
   - id: aws-session-token
     description: AWS Session Token
@@ -58,6 +71,9 @@ rules:
     regex: '(?i)(aws[_\-.]?session[_\-.]?token|x-amz-security-token)[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9/+=]{100,})'
     secret_group: 2
     tags: [aws, cloud]
+    remediation: >-
+      임시 자격 증명이라 만료되면 자동으로 무효화되지만, 발급한 근원 자격 증명(IAM 사용자/역할)이
+      노출된 것일 수 있으므로 해당 사용자·역할의 액세스 키도 함께 점검하고 필요시 폐기하라.
 
   # ---------------------------------------------------------------- GitHub
   - id: github-pat
@@ -67,6 +83,9 @@ rules:
     regex: '\b(ghp_[A-Za-z0-9]{36})\b'
     secret_group: 1
     tags: [github, vcs]
+    remediation: >-
+      GitHub → Settings → Developer settings → Personal access tokens에서 해당 토큰을
+      Delete(폐기).
 
   - id: github-fine-grained-pat
     description: GitHub Fine-grained Personal Access Token
@@ -75,6 +94,9 @@ rules:
     regex: '\b(github_pat_[A-Za-z0-9_]{82})\b'
     secret_group: 1
     tags: [github, vcs]
+    remediation: >-
+      GitHub → Settings → Developer settings → Fine-grained personal access tokens에서
+      해당 토큰을 Delete(폐기).
 
   - id: github-oauth-token
     description: GitHub OAuth / App / Refresh Token
@@ -83,6 +105,9 @@ rules:
     regex: '\b((gho|ghu|ghs|ghr)_[A-Za-z0-9]{36})\b'
     secret_group: 1
     tags: [github, vcs]
+    remediation: >-
+      발급한 OAuth App 또는 GitHub App 설정(Settings → Developer settings)에서 해당
+      사용자의 인가(authorization)를 취소하거나 App을 Uninstall해 토큰을 즉시 무효화하라.
 
   # 2024년 이후 GitLab이 발급하는 PAT는 라우터블 토큰 형식이라
   # glpat-<본문>.<2자 체크섬>.<나머지> 처럼 마침표를 포함한다.
@@ -96,6 +121,8 @@ rules:
     regex: '\b(glpat-[A-Za-z0-9\-_]{20,}(?:\.[A-Za-z0-9\-_]{2}\.[A-Za-z0-9\-_]+)?)\b'
     secret_group: 1
     tags: [gitlab, vcs]
+    remediation: >-
+      GitLab → User Settings → Access Tokens에서 해당 토큰을 Revoke.
 
   # ---------------------------------------------------------------- Slack
   - id: slack-token
@@ -105,6 +132,9 @@ rules:
     regex: '\b(xox[baprs]-[0-9A-Za-z\-]{10,72})\b'
     secret_group: 1
     tags: [slack, messaging]
+    remediation: >-
+      api.slack.com/apps에서 해당 App 선택 → OAuth & Permissions → Revoke Token,
+      또는 App을 워크스페이스에서 재설치해 토큰을 새로 발급한다.
 
   - id: slack-app-token
     description: Slack App-Level Token
@@ -113,6 +143,9 @@ rules:
     regex: '\b(xapp-[0-9]-[A-Z0-9]+-[0-9]+-[a-f0-9]{64})\b'
     secret_group: 1
     tags: [slack, messaging]
+    remediation: >-
+      api.slack.com/apps에서 해당 App 선택 → Basic Information → App-Level Tokens에서
+      해당 토큰을 삭제.
 
   - id: slack-webhook
     description: Slack Incoming Webhook URL
@@ -121,6 +154,8 @@ rules:
     regex: '(https://hooks\.slack\.com/services/T[A-Za-z0-9_]{8,12}/B[A-Za-z0-9_]{8,12}/[A-Za-z0-9_]{24})'
     secret_group: 1
     tags: [slack, webhook]
+    remediation: >-
+      api.slack.com/apps에서 해당 App 선택 → Incoming Webhooks에서 이 Webhook URL을 Remove.
 
   # ---------------------------------------------------------------- 결제
   - id: stripe-secret-key
@@ -130,6 +165,9 @@ rules:
     regex: '\b((sk|rk)_live_[0-9A-Za-z]{24,99})\b'
     secret_group: 1
     tags: [stripe, payment]
+    remediation: >-
+      Stripe Dashboard → Developers → API keys에서 해당 키를 Roll(재발급). 즉시 이전 키는
+      무효화된다.
 
   # Stripe 테스트 키(sk_test_)는 룰에서 제외한다.
   # 실제 결제가 불가능해 유출 피해가 없고, 값에 test 가 들어가 플레이스홀더 감점에
@@ -146,6 +184,9 @@ rules:
     regex: '\b(AIza[0-9A-Za-z\-_]{35})\b'
     secret_group: 1
     tags: [google, cloud]
+    remediation: >-
+      Google Cloud Console → APIs & Services → Credentials에서 해당 키를 삭제하고
+      재발급. 삭제 전에 임시로 API 제한(허용 API/리퍼러)을 걸어두면 즉시 피해를 줄일 수 있다.
 
   # Google OAuth Client ID도 같은 이유로 제외한다. 공개 식별자이며 그 자체로는 유출이 아니다.
 
@@ -161,6 +202,8 @@ rules:
     regex: '\b(sk-(proj-)?[A-Za-z0-9\-_]{20,}T3BlbkFJ[A-Za-z0-9\-_]{20,})\b'
     secret_group: 1
     tags: [ai, saas]
+    remediation: >-
+      platform.openai.com → API keys에서 해당 키를 Revoke.
 
   - id: anthropic-api-key
     description: Anthropic API Key
@@ -169,6 +212,8 @@ rules:
     regex: '\b(sk-ant-[A-Za-z0-9\-_]{90,})\b'
     secret_group: 1
     tags: [ai, saas]
+    remediation: >-
+      console.anthropic.com → API Keys에서 해당 키를 삭제.
 
   - id: sendgrid-api-key
     description: SendGrid API Key
@@ -177,6 +222,8 @@ rules:
     regex: '\b(SG\.[A-Za-z0-9\-_]{22}\.[A-Za-z0-9\-_]{43})\b'
     secret_group: 1
     tags: [email, saas]
+    remediation: >-
+      SendGrid → Settings → API Keys에서 해당 키를 Delete.
 
   - id: mailgun-api-key
     description: Mailgun API Key
@@ -185,6 +232,8 @@ rules:
     regex: '\b(key-[0-9a-f]{32})\b'
     secret_group: 1
     tags: [email, saas]
+    remediation: >-
+      Mailgun → Sending → Domain settings 또는 계정 API Keys 화면에서 해당 키를 재발급.
 
   - id: twilio-api-key
     description: Twilio API Key SID
@@ -196,6 +245,9 @@ rules:
     regex: '(?i)twilio[_\-. ]?(api[_\-. ]?)?(key|sid|token)?[^a-zA-Z0-9]{0,20}[''"]?(SK[0-9a-fA-F]{32})'
     secret_group: 3
     tags: [twilio, saas]
+    remediation: >-
+      Twilio Console → Account → API keys & tokens에서 해당 API Key를 삭제. Auth Token이
+      함께 노출됐다면 별도로 Rotate해야 한다(같은 화면에서 재생성 가능).
 
   - id: npm-access-token
     description: npm Access Token
@@ -204,6 +256,8 @@ rules:
     regex: '\b(npm_[A-Za-z0-9]{36})\b'
     secret_group: 1
     tags: [npm, package-registry]
+    remediation: >-
+      npmjs.com → Access Tokens에서 해당 토큰을 Revoke.
 
   - id: shopify-access-token
     description: Shopify Access Token
@@ -212,6 +266,9 @@ rules:
     regex: '\b(shp(at|ca|pa|ss)_[a-fA-F0-9]{32})\b'
     secret_group: 1
     tags: [shopify, saas]
+    remediation: >-
+      Shopify Admin → Apps and sales channels → 해당 앱 설정에서 접근을 Uninstall하거나
+      Custom App이면 API credentials를 재생성.
 
   - id: discord-bot-token
     description: Discord Bot Token
@@ -222,6 +279,8 @@ rules:
     regex: '(?i)discord[_\-. ]?(bot)?[_\-. ]?(token)?[^a-zA-Z0-9]{0,20}([MNO][A-Za-z0-9\-_]{23}\.[A-Za-z0-9\-_]{6}\.[A-Za-z0-9\-_]{27})'
     secret_group: 3
     tags: [discord, messaging]
+    remediation: >-
+      Discord Developer Portal → 해당 Application → Bot → Reset Token.
 
   - id: telegram-bot-token
     description: Telegram Bot Token
@@ -230,6 +289,8 @@ rules:
     regex: '\b([0-9]{8,10}:AA[A-Za-z0-9\-_]{33})\b'
     secret_group: 1
     tags: [telegram, messaging]
+    remediation: >-
+      텔레그램에서 @BotFather에게 /revoke 명령을 보내 해당 봇의 토큰을 재발급.
 
   # ---------------------------------------------------------------- 키/인증서
   - id: private-key
@@ -239,6 +300,10 @@ rules:
     regex: '-----BEGIN ((RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED) )?PRIVATE KEY( BLOCK)?-----'
     secret_group: 0
     tags: [key, crypto]
+    remediation: >-
+      이 개인키로 발급된 인증서·SSH 등록·서비스 계정을 해당 서비스(서버 authorized_keys,
+      인증기관, 클라우드 IAM 등)에서 즉시 폐기하고 새 키 쌍을 발급하라. 어떤 용도의 키인지에
+      따라 절차가 다르므로 파일 경로와 컨텍스트로 용도를 먼저 특정해야 한다.
 
   - id: jwt
     description: JWT (서명된 토큰, 만료 여부와 무관하게 탐지)
@@ -247,6 +312,10 @@ rules:
     regex: '\b(eyJ[A-Za-z0-9\-_]{10,}\.eyJ[A-Za-z0-9\-_]{10,}\.[A-Za-z0-9\-_]{10,})\b'
     secret_group: 1
     tags: [jwt, auth]
+    remediation: >-
+      발급 시스템에서 해당 세션·리프레시 토큰을 무효화하거나 강제 로그아웃시켜라. 토큰이
+      단기 만료라면 서명 키(secret) 자체가 함께 노출됐는지도 점검하고, 그렇다면 서명 키를
+      교체해 이미 발급된 모든 토큰을 무효화해야 한다.
 
   # ---------------------------------------------------------------- 인프라 / DB
   - id: db-connection-string
@@ -256,6 +325,9 @@ rules:
     regex: '\b((postgres|postgresql|mysql|mariadb|mongodb|mongodb\+srv|redis|amqp)://[^\s:@/]+:[^\s:@/]+@[^\s/]+)'
     secret_group: 1
     tags: [database, credentials]
+    remediation: >-
+      해당 DB 계정의 비밀번호를 즉시 변경(ALTER USER / 관리 콘솔)하고, 접속 IP를 제한하는
+      방화벽·보안그룹 규칙을 함께 점검하라.
 
   - id: azure-storage-key
     description: Azure Storage Account Key
@@ -264,6 +336,10 @@ rules:
     regex: 'AccountKey=([A-Za-z0-9+/=]{86,88})'
     secret_group: 1
     tags: [azure, cloud]
+    remediation: >-
+      Azure Portal → 해당 Storage Account → Security + networking → Access keys에서
+      노출된 키를 Rotate(재생성). 두 키를 번갈아 쓰는 구조라면 나머지 키로 먼저 전환한 뒤
+      재생성하면 무중단으로 처리할 수 있다.
 
   - id: heroku-api-key
     description: Heroku API Key
@@ -273,6 +349,8 @@ rules:
     regex: '(?i)heroku[_\-. ]?(api[_\-. ]?)?(key|token)[^a-zA-Z0-9]{0,20}[''"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
     secret_group: 3
     tags: [heroku, cloud]
+    remediation: >-
+      Heroku Dashboard → Account settings → API Key에서 Regenerate API Key.
 
   # ---------------------------------------------------------------- 일반 패턴
   - id: generic-api-key
@@ -283,6 +361,9 @@ rules:
     secret_group: 2
     entropy: 3.5
     tags: [generic]
+    remediation: >-
+      룰만으로는 어떤 서비스의 키인지 특정할 수 없다. 변수명·주변 코드·파일 경로로 발급처를
+      확인한 뒤 해당 서비스의 키 관리 화면에서 폐기하고 재발급하라.
 
   - id: basic-auth-header
     description: HTTP Basic Auth 헤더에 하드코딩된 인증정보
@@ -291,6 +372,9 @@ rules:
     regex: '(?i)authorization\s*[:=]\s*[''"]?Basic\s+([A-Za-z0-9+/=]{16,})'
     secret_group: 1
     tags: [http, credentials]
+    remediation: >-
+      Base64를 디코드하면 `사용자명:비밀번호`가 그대로 드러난다. 해당 계정의 비밀번호를
+      즉시 변경하라.
 
 # ------------------------------------------------------------------
 # 엔트로피 분석 설정

@@ -20,6 +20,14 @@ type Finding struct {
 	Confidence  int             `json:"confidence"`
 	Tags        []string        `json:"tags,omitempty"`
 
+	// Remediation은 이 키를 발급처에서 폐기(revoke)하는 절차 안내다. 룰에서 그대로 옮겨온다.
+	Remediation string `json:"remediation,omitempty"`
+
+	// HistoryCleanup은 이 파일을 git 히스토리에서 제거하는 명령이다. 히스토리에서
+	// 발견된 경우(Commit != "")에만 채워진다. Reporter가 계산해 채운다 — 발급처 폐기와
+	// 달리 리포지토리 구조에 의존하는 정보라 룰이 아니라 리포트 생성 단계의 책임이다.
+	HistoryCleanup string `json:"history_cleanup,omitempty"`
+
 	// 같은 값이 여러 커밋·줄에 걸쳐 나타나면 하나로 묶고, 위치는 최초 유입 시점을 가리킨다.
 	// Occurrences 는 묶인 개수, InWorktree 는 현재 파일에도 남아있는지를 뜻한다.
 	Occurrences int  `json:"occurrences"`

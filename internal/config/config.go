@@ -49,6 +49,9 @@ type Rule struct {
 	SecretGroup int      `yaml:"secret_group"`
 	Entropy     float64  `yaml:"entropy"`
 	Tags        []string `yaml:"tags"`
+	// Remediation은 이 종류의 키를 발급처에서 폐기(revoke)하는 절차 안내다.
+	// 탐지만으로 끝나지 않고 대응까지 이어지도록 Finding에 그대로 실린다.
+	Remediation string `yaml:"remediation"`
 
 	Pattern *regexp.Regexp `yaml:"-"`
 }

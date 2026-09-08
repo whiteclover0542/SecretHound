@@ -92,6 +92,7 @@ func (d *Detector) ScanLine(loc Location, line string, lineNo int) []finding.Fin
 				Entropy:     entropy,
 				Confidence:  initialConfidence,
 				Tags:        r.cfg.Tags,
+				Remediation: r.cfg.Remediation,
 				Secret:      secret,
 				Masked:      Mask(secret),
 			})

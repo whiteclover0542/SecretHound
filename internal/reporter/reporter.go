@@ -85,8 +85,13 @@ func Build(in Input) Report {
 	})
 
 	bySeverity := make(map[string]int)
-	for _, f := range findings {
-		bySeverity[string(f.Severity)]++
+	for i := range findings {
+		bySeverity[string(findings[i].Severity)]++
+		// 히스토리에서 발견된 경우에만 정리 명령을 붙인다. 워킹트리에만 있는
+		// 파일은 그냥 지우면 되므로 필요 없다.
+		if findings[i].Commit != "" {
+			findings[i].HistoryCleanup = historyCleanupCommand(findings[i].Path)
+		}
 	}
 
 	summary := Summary{
@@ -161,7 +166,73 @@ func WriteText(w io.Writer, r Report, color bool) error {
 	}
 
 	writeSummary(w, r)
+	writeRemediation(w, r.Findings)
 	return nil
+}
+
+// historyCleanupCommand는 히스토리에서 이 파일을 완전히 제거하는 git filter-repo
+// 명령을 만든다. 값 하나만 지우는 --replace-text 방식도 있지만, 원본 시크릿 값을
+// 리포트에 담지 않는다는 설계(Masked 참조)와 상충해 쓸 수 없다 — 값이 있어야 정확한
+// 치환 규칙을 만들 수 있는데, 그 값 자체가 유출 경로가 되면 안 되기 때문이다.
+// 대신 파일 단위 제거를 기본으로 안내하고, 값만 지우고 싶다면 사용자가 직접
+// --replace-text 규칙을 구성하도록 안내 문구를 덧붙인다.
+func historyCleanupCommand(path string) string {
+	return "git filter-repo --path " + shellQuote(path) + " --invert-paths"
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+}
+
+// writeRemediation은 탐지에서 그치지 않고 실제 대응까지 이어지도록, 폐기 절차와
+// 히스토리 정리 명령을 모아 보여준다. 같은 룰·같은 파일이 여러 건이어도 한 번씩만 싣는다.
+func writeRemediation(w io.Writer, findings []finding.Finding) {
+	type guide struct {
+		ruleID string
+		text   string
+	}
+
+	var guides []guide
+	var cleanups []string
+	seenRule := make(map[string]bool)
+	seenPath := make(map[string]bool)
+
+	for _, f := range findings {
+		if f.Remediation != "" && !seenRule[f.RuleID] {
+			seenRule[f.RuleID] = true
+			guides = append(guides, guide{f.RuleID, f.Remediation})
+		}
+		if f.HistoryCleanup != "" && !seenPath[f.Path] {
+			seenPath[f.Path] = true
+			cleanups = append(cleanups, f.HistoryCleanup)
+		}
+	}
+
+	if len(guides) == 0 && len(cleanups) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, strings.Repeat("─", 60))
+	fmt.Fprintln(w, "대응 방법")
+
+	if len(cleanups) > 0 {
+		fmt.Fprintln(w, "! 키를 지우기 전에 반드시 먼저 폐기하세요 — 히스토리에서 파일만 지워도")
+		fmt.Fprintln(w, "  키 자체는 여전히 유효하고, 이미 어딘가에 클론되어 있을 수 있습니다.")
+	}
+
+	for _, g := range guides {
+		fmt.Fprintf(w, "  [%s] %s\n", g.ruleID, g.text)
+	}
+
+	if len(cleanups) > 0 {
+		fmt.Fprintln(w, "히스토리에서 제거 (폐기 완료 후 실행):")
+		for _, cmd := range cleanups {
+			fmt.Fprintf(w, "  %s\n", cmd)
+		}
+		fmt.Fprintln(w, "  (해당 파일을 히스토리 전체에서 제거합니다. 실행 후 원격에 강제 푸시하고")
+		fmt.Fprintln(w, "   팀원 전원이 저장소를 다시 클론해야 합니다. 파일 전체가 아니라 값만")
+		fmt.Fprintln(w, "   지우려면 git filter-repo --replace-text 규칙을 직접 구성하세요.)")
+	}
 }
 
 func writeSummary(w io.Writer, r Report) {
