@@ -84,11 +84,16 @@ rules:
     secret_group: 1
     tags: [github, vcs]
 
+  # 2024년 이후 GitLab이 발급하는 PAT는 라우터블 토큰 형식이라
+  # glpat-<본문>.<2자 체크섬>.<나머지> 처럼 마침표를 포함한다.
+  # 기존 정규식은 마침표를 허용하지 않아 이 형식을 통째로 놓쳤다 —
+  # 실제 발급받은 키로 --validate 검증하다가 발견한 결함이다 (eval/labels.yaml 참고).
+  # 구형식(마침표 없는 20자)과 신형식을 모두 받도록 마침표 구간을 선택적으로 둔다.
   - id: gitlab-pat
     description: GitLab Personal Access Token
     severity: critical
     keywords: [glpat-]
-    regex: '\b(glpat-[A-Za-z0-9\-_]{20})\b'
+    regex: '\b(glpat-[A-Za-z0-9\-_]{20,}(?:\.[A-Za-z0-9\-_]{2}\.[A-Za-z0-9\-_]+)?)\b'
     secret_group: 1
     tags: [gitlab, vcs]
 

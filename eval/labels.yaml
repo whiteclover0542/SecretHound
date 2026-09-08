@@ -112,6 +112,10 @@ cases:
   - path: config/services.env
     secrets:
       - { line: 3, kind: twilio-api-key, note: "키 이름과 값이 같은 줄에 있는 형태" }
+      # 2024년 이후 발급되는 GitLab PAT는 glpat-<본문>.<2자>.<나머지> 형태로
+      # 마침표를 포함한다(라우터블 토큰). 실제 발급받은 키로 --validate 검증하다가
+      # 이 형식이 구형 룰(마침표 미허용)에 통째로 안 걸리는 것을 발견했다.
+      - { line: 5, kind: gitlab-pat, note: "GitLab 신형식 PAT (마침표 포함 라우터블 토큰)" }
     traps:
       - { line: 2, note: "Twilio Account SID는 식별자이지 자격증명이 아니다" }
 
