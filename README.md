@@ -27,6 +27,47 @@ CRITICAL  config.js@be880d7:1  github-pat  ghp_9m******2pXk  (신뢰도 100)
 
 워킹트리에서는 이미 환경변수로 옮겨 깨끗하지만, 과거 커밋에 토큰이 남아있는 상황이다.
 
+## 빠른 시작
+
+**1. 설치**
+
+```bash
+go install github.com/whiteclover0542/secrethound/cmd/secrethound@latest
+```
+
+Go가 없거나 소스를 직접 빌드하고 싶다면 아래 [설치](#설치) 참고.
+
+**2. 스캔할 폴더에서 실행**
+
+```bash
+secrethound scan . --history
+```
+
+- `.` 은 "지금 있는 폴더"라는 뜻이다. 다른 폴더를 보고 싶으면 그 경로로 바꾸면 된다.
+  예: `secrethound scan C:\projects\myrepo --history`
+- `--history` 를 붙이면 지금은 지워졌지만 **과거 커밋에는 남아있는** 시크릿까지 찾는다.
+  빼면 지금 파일만 본다.
+
+> **Windows PowerShell 사용자**: 소스에서 직접 빌드해 `secrethound.exe` 를 만들었다면,
+> 그 파일이 있는 폴더에서 `secrethound scan ...` 이 아니라 앞에 `.\` 를 붙인
+> `.\secrethound.exe scan . --history` 로 실행해야 한다. PowerShell은 현재 폴더의
+> 실행 파일을 자동으로 찾지 않는다 (`go install` 로 설치했다면 이 문제 없음).
+
+**3. 결과 읽기**
+
+심각도(`CRITICAL`/`HIGH`/...), 위치(`파일:줄번호`), 어떤 종류의 키인지, 값의 일부
+(마스킹됨)가 한 줄씩 나온다. 아무것도 안 뜨고 "탐지된 시크릿이 없습니다"만 나오면
+정상이다 — 시크릿이 없다는 뜻이다.
+
+**4. (선택) 브라우저에서 표로 보기**
+
+```bash
+secrethound scan . --history --format json --output report.json
+```
+
+생성된 `report.json`을 [`web/dashboard.html`](web/dashboard.html) 파일을 브라우저로
+열어 화면에 끌어다 놓으면 표로 볼 수 있다. 빌드나 서버가 필요 없다.
+
 ## 설치
 
 ```bash
@@ -45,33 +86,28 @@ go build -o secrethound ./cmd/secrethound
 
 ## 사용법
 
+위 [빠른 시작](#빠른-시작)에서 다룬 기본 스캔 이후, 상황별로 자주 쓰는 명령이다.
+
 ```bash
-# 현재 디렉토리 스캔
-secrethound scan
-
-# 특정 경로 + 커밋 히스토리까지 스캔
-secrethound scan ./myrepo --history
-
-# 최근 100개 커밋만 스캔 (대형 레포)
+# 최근 100개 커밋만 스캔 (대형 레포라 히스토리 스캔이 오래 걸릴 때)
 secrethound scan ./myrepo --history --max-commits 100
 
-# JSON으로 저장
-secrethound scan ./myrepo --format json --output report.json
-
-# 탐지된 키가 아직 살아있는지 발급처에 확인 (네트워크 사용)
+# 탐지된 키가 아직 살아있는지 발급처에 직접 확인 (네트워크 사용, 기본은 확인 안 함)
 secrethound scan ./myrepo --validate
 
-# 이미 시크릿이 많은 레포에 처음 도입할 때: 현재 상태를 baseline으로 저장
+# 이미 시크릿이 많이 섞여 있는 레포에 처음 도입할 때: 지금 상태를 baseline으로 저장
 secrethound scan ./myrepo --history --baseline-out secrethound-baseline.json
 
-# 이후로는 baseline에 없는 새 시크릿만 보고
+# 이후로는 baseline에 없는 새로 추가된 시크릿만 보고
 secrethound scan ./myrepo --history --baseline secrethound-baseline.json
 
-# 탐지 룰 목록 확인 (어떤 룰이 검증 가능한지 함께 표시)
+# 탐지 룰 목록 확인 (어떤 룰이 --validate 로 검증 가능한지 함께 표시)
 secrethound rules
 ```
 
-### 플래그
+### 전체 플래그
+
+거의 다 쓰지 않아도 되고, 필요할 때 찾아보는 참고용 표다.
 
 | 플래그 | 설명 |
 |---|---|

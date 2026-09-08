@@ -10,6 +10,7 @@
 
 # 스캔 결과물
 *.report.json
+report.json
 
 # 에디터
 .idea/
