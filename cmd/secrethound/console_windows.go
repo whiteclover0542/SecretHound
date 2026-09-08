@@ -84,10 +84,21 @@ func explorerLaunch(args []string) ([]string, bool) {
 	switch {
 	case len(args) == 0:
 		return []string{"check", "--pick", "--out", outDir}, true
-	case len(args) == 1 && isDir(args[0]):
-		return []string{"check", args[0], "--out", outDir}, true
+	case allDirs(args):
+		// 탐색기에서는 폴더 여러 개를 한꺼번에 끌어다 놓을 수 있다.
+		out := append([]string{"check"}, args...)
+		return append(out, "--out", outDir), true
 	}
 	return args, true
+}
+
+func allDirs(paths []string) bool {
+	for _, p := range paths {
+		if !isDir(p) {
+			return false
+		}
+	}
+	return len(paths) > 0
 }
 
 // waitForKey는 더블클릭으로 열린 창이 결과를 보여주기도 전에 닫히지 않게 붙잡는다.

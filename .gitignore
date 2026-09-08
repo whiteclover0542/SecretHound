@@ -27,5 +27,5 @@ Thumbs.db
 /build/
 
 # check 커맨드가 만드는 리포트 (레포 안에서 돌리면 여기 생긴다)
-secrethound-report.html
-secrethound-report.md
+secrethound-report*.html
+secrethound-report*.md
