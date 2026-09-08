@@ -433,6 +433,18 @@
     }[c]));
   }
 
+  // normalizeReport는 리포트인지 확인하고, 형태가 조금 다른 옛 리포트를 받아준다.
+  // 리포트가 아니면 null 을 돌려준다.
+  //
+  // 0.4.2 이전 버전은 탐지가 0건일 때 findings 를 빈 배열이 아니라 null 로 내보냈다
+  // (Go의 nil 슬라이스가 JSON에서 null 이 된다). 그 리포트도 읽을 수 있어야 한다.
+  function normalizeReport(data) {
+    if (!data || typeof data !== 'object' || !data.summary) return null;
+    if (data.findings == null) data.findings = [];
+    if (!Array.isArray(data.findings)) return null;
+    return data;
+  }
+
   // ---- 파일 로드 ----
   const dropzone = $('#dropzone');
   const fileInput = $('#fileInput');
@@ -456,8 +468,8 @@
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(reader.result);
-        if (!Array.isArray(data.findings) || !data.summary) {
+        const data = normalizeReport(JSON.parse(reader.result));
+        if (!data) {
           throw new Error('secrethound 리포트 형식이 아닙니다 (findings, summary 필드가 필요합니다)');
         }
         report = data;
@@ -792,8 +804,8 @@
   const embedded = document.getElementById('secrethound-report');
   if (embedded) {
     try {
-      const data = JSON.parse(embedded.textContent);
-      if (!Array.isArray(data.findings) || !data.summary) {
+      const data = normalizeReport(JSON.parse(embedded.textContent));
+      if (!data) {
         throw new Error('findings, summary 필드가 필요합니다');
       }
       report = data;

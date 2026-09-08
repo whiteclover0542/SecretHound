@@ -343,3 +343,31 @@ func TestMarkdownCodeSpan(t *testing.T) {
 		}
 	}
 }
+
+// 탐지가 0건이어도 findings 는 빈 배열이어야 한다. nil 슬라이스는 JSON에서 null 이
+// 되는데, 그러면 배열을 기대하는 쪽이 전부 깨진다 — 대시보드는 리포트를 열지 못하고
+// .length 를 쓰는 CI 스크립트는 오류를 낸다. 실제로 v0.4.1 에서 이 버그가 있었다.
+func TestEmptyFindingsSerializeAsArray(t *testing.T) {
+	in := sampleInput()
+	in.Findings = nil
+
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, Build(in)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `"findings": []`) {
+		t.Errorf("탐지 0건일 때 findings 가 빈 배열이 아님:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), `"findings": null`) {
+		t.Error("findings 가 null 로 나감")
+	}
+
+	// 심어진 리포트도 같은 값을 담아야 대시보드가 읽을 수 있다.
+	var html bytes.Buffer
+	if err := WriteHTML(&html, Build(in), dashboardTemplate(t)); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(embeddedJSON(t, html.String()), `"findings": null`) {
+		t.Error("HTML에 심어진 리포트의 findings 가 null 로 나감")
+	}
+}

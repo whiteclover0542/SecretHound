@@ -67,7 +67,11 @@ type Input struct {
 }
 
 func Build(in Input) Report {
-	findings := append([]finding.Finding(nil), in.Findings...)
+	// nil 슬라이스는 JSON에서 null 로 나간다. 탐지가 0건일 때 "findings": null 이
+	// 되면 배열을 기대하는 쪽이 전부 깨진다 — 대시보드는 리포트를 못 읽고, .length
+	// 를 쓰는 CI 스크립트는 오류를 낸다. 길이 0으로 만들어 항상 [] 로 나가게 한다.
+	findings := make([]finding.Finding, 0, len(in.Findings))
+	findings = append(findings, in.Findings...)
 	sort.SliceStable(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
 		// 살아있다고 확인된 키가 맨 위로 온다. 심각도보다 앞세우는 이유는,
