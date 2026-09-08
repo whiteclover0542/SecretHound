@@ -507,9 +507,9 @@ rules:
     description: 키워드 + 값 형태의 범용 시크릿 (엔트로피 검증 병행)
     severity: medium
     keywords: [key, secret, token, password, passwd, pwd, credential]
-    regex: '(?i)\b(api[_\-]?key|apikey|secret[_\-]?key|access[_\-]?token|auth[_\-]?token|client[_\-]?secret|password|passwd|credential)\b\s*[:=]\s*[''"]([A-Za-z0-9\-_=+/\.]{16,})[''"]'
+    regex: '(?i)(api[_\-]?key|apikey|secret[_\-]?key|access[_\-]?token|auth[_\-]?token|client[_\-]?secret|password|passwd|credential)\b\s*[:=]\s*[''"]([A-Za-z0-9\-_=+/\.]{16,})[''"]'
     secret_group: 2
-    entropy: 3.5
+    entropy: 3.0
     tags: [generic]
     remediation: >-
       룰만으로는 어떤 서비스의 키인지 특정할 수 없다. 변수명·주변 코드·파일 경로로 발급처를

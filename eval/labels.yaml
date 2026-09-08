@@ -153,6 +153,13 @@ cases:
       - { line: 3, note: "NEXT_PUBLIC_ 접두사가 붙은 네이버 Client ID. 공개 식별자이며, 앞에 다른 단어가 붙어도 시크릿 룰이 오작동하지 않아야 한다" }
 
   # ---------------------------------------------------------------- 오탐 유발 케이스
+  - path: config/prefixed_env_vars.env
+    secrets:
+      - { line: 4, kind: generic-api-key, note: "회귀 방지: DD_API_KEY 처럼 접두사 뒤에 오는 API_KEY. generic-api-key 룰이 선행 \b 때문에 이런 이름을 전부 놓쳤었다" }
+      - { line: 5, kind: generic-api-key, note: "회귀 방지: GH_ACCESS_TOKEN 처럼 접두사 뒤에 오는 ACCESS_TOKEN" }
+      - { line: 6, kind: generic-api-key, note: "회귀 방지: DB_PASSWORD 처럼 접두사 뒤에 오는 PASSWORD" }
+      - { line: 11, kind: generic-api-key, note: "회귀 방지: 32자리 hex, 엔트로피 3.242. 옛 게이트(3.5)에서는 탈락하고 새 게이트(3.0)는 통과하는 경계값" }
+
   - path: .env.example
     secrets: []
     traps:
