@@ -50,6 +50,12 @@ func main() {
 	// 콘솔은 사용자 것이라 빌려 쓰는 셈이다. 끝나면 되돌린다.
 	restoreConsole := setupConsole()
 
+	// cobra는 Windows에서 탐색기로 실행된 것을 감지하면 "This is a command line tool.
+	// You need to open cmd.exe and run it from there." 만 띄우고 종료한다(mousetrap).
+	// 터미널을 쓰지 않는 사용자가 이 도구의 대상이고 그 경우를 아래에서 직접 처리하므로,
+	// 이 개입을 끈다. 빈 문자열이면 cobra가 검사 자체를 건너뛴다.
+	cobra.MousetrapHelpText = ""
+
 	// 탐색기에서 더블클릭했거나 폴더를 끌어다 놓았으면 커맨드를 대신 채워준다.
 	args, fromExplorer := explorerLaunch(os.Args[1:])
 

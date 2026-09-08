@@ -19,11 +19,25 @@ func pickFolder(prompt string) (string, error) {
 	// 선택한 경로에 한글이 들어가는 일이 흔하다(예: 바탕 화면\내 프로젝트).
 	// PowerShell 표준출력의 인코딩은 콘솔 코드페이지에 따라 달라지므로, 경로를
 	// base64로 감싸 ASCII로만 주고받는다. 그러면 코드페이지가 무엇이든 값이 상한다.
+	// 대화상자를 그냥 띄우면 다른 창 뒤에 가려 "아무 일도 안 일어난 것"처럼 보인다.
+	// 화면 밖에 둔 TopMost 창을 주인으로 넘겨 앞으로 끌어올린다.
 	script := `Add-Type -AssemblyName System.Windows.Forms
+$top = New-Object System.Windows.Forms.Form
+$top.TopMost = $true
+$top.ShowInTaskbar = $false
+$top.FormBorderStyle = 'None'
+$top.Width = 1; $top.Height = 1
+$top.StartPosition = 'Manual'
+$top.Left = -3000; $top.Top = -3000
+$top.Show()
+
 $d = New-Object System.Windows.Forms.FolderBrowserDialog
 $d.Description = ` + psQuote(prompt) + `
 $d.ShowNewFolderButton = $false
-if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+$result = $d.ShowDialog($top)
+$top.Close()
+
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
   [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.SelectedPath))
 }`
 

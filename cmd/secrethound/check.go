@@ -157,6 +157,12 @@ func selectRoots(args []string, pick bool) ([]string, error) {
 		return []string{"."}, nil
 	}
 
+	// 창이 뜨기까지 잠깐 걸린다. 아무 안내도 없으면 빈 검은 창만 보여서
+	// 프로그램이 안 켜진 것으로 오해하기 쉽다.
+	fmt.Println("검사할 폴더를 선택하는 창을 띄우는 중입니다...")
+	fmt.Println("창이 보이지 않으면 다른 창 뒤에 있는지, 작업 표시줄을 확인하세요.")
+	fmt.Println()
+
 	picked, err := pickFolder("secrethound: 검사할 폴더를 선택하세요")
 	if err != nil {
 		return nil, err
