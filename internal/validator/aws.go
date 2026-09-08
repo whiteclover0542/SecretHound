@@ -22,7 +22,15 @@ const (
 	ruleAWSAccessKeyID   = "aws-access-key-id"
 	ruleAWSSecretKey     = "aws-secret-access-key"
 	ruleAWSSecretKeyBare = "aws-secret-access-key-bare"
+	ruleAWSSessionToken  = "aws-session-token"
 )
+
+// awsPairing은 Access Key ID 하나에 짝지어진 나머지 조각들이다.
+// sessionToken은 임시 자격증명(ASIA)일 때만 채워진다.
+type awsPairing struct {
+	secret       string
+	sessionToken string
+}
 
 const (
 	awsRegion    = "us-east-1"
@@ -37,8 +45,8 @@ const (
 	stsContentType = "application/x-www-form-urlencoded; charset=utf-8"
 )
 
-// pairAWSKeys는 Access Key ID 대상마다 짝이 될 Secret Access Key를 찾는다.
-// 반환하는 맵의 키는 targets 슬라이스의 인덱스다.
+// pairAWSKeys는 Access Key ID 대상마다 짝이 될 Secret Access Key를(그리고 임시
+// 자격증명이면 세션 토큰까지) 찾는다. 반환하는 맵의 키는 targets 슬라이스의 인덱스다.
 //
 // 같은 파일에 있는 후보를 줄 거리가 가까운 순으로 먼저 고르고, 없으면 레포 전체에서 찾는다.
 // (AKIA는 README에, secret은 .env에 있는 식으로 흩어지는 경우가 흔하다)
@@ -47,30 +55,43 @@ const (
 // 없으면 잘못 짝지을 수 있다. 그 경우 STS가 SignatureDoesNotMatch를 돌려주므로
 // "폐기됨"이 아니라 "검증불가"로 보고된다 — 틀린 짝 때문에 살아있는 키를
 // 죽었다고 보고하는 일은 생기지 않는다.
-func pairAWSKeys(targets []Target) map[int]string {
-	var candidates []int
+func pairAWSKeys(targets []Target) map[int]awsPairing {
+	var secretCandidates, tokenCandidates []int
 	for i := range targets {
 		switch targets[i].RuleID {
 		case ruleAWSSecretKey, ruleAWSSecretKeyBare:
 			if targets[i].Secret != "" {
-				candidates = append(candidates, i)
+				secretCandidates = append(secretCandidates, i)
+			}
+		case ruleAWSSessionToken:
+			if targets[i].Secret != "" {
+				tokenCandidates = append(tokenCandidates, i)
 			}
 		}
 	}
-	if len(candidates) == 0 {
+	if len(secretCandidates) == 0 {
 		return nil
 	}
 
-	pairs := make(map[int]string)
+	pairs := make(map[int]awsPairing)
 	for i := range targets {
-		if targets[i].RuleID == ruleAWSAccessKeyID {
-			pairs[i] = nearestSecret(targets, i, candidates)
+		if targets[i].RuleID != ruleAWSAccessKeyID {
+			continue
 		}
+		p := awsPairing{secret: nearestValue(targets, i, secretCandidates)}
+		if isTemporaryAWSKey(targets[i].Secret) && len(tokenCandidates) > 0 {
+			p.sessionToken = nearestValue(targets, i, tokenCandidates)
+		}
+		pairs[i] = p
 	}
 	return pairs
 }
 
-func nearestSecret(targets []Target, idx int, candidates []int) string {
+// nearestValue는 candidates 중 idx와 같은 파일에 있고 줄 거리가 가장 가까운 것의
+// 값을 돌려준다. 같은 파일에 후보가 없으면 레포 전체에서 가장 가까운 것을 쓴다.
+// secret과 session token 페어링 모두 이 로직을 그대로 쓴다 — 둘 다 "같은 자격증명
+// 조각끼리는 물리적으로 가까이 있을 가능성이 높다"는 같은 휴리스틱이다.
+func nearestValue(targets []Target, idx int, candidates []int) string {
 	akid := targets[idx]
 
 	pool := make([]int, 0, len(candidates))
@@ -97,9 +118,11 @@ func distance(a, b int) int {
 }
 
 // isTemporaryAWSKey는 STS가 발급한 임시 자격증명인지 판별한다.
-// ASIA로 시작하는 키는 세션 토큰까지 있어야 인증되는데, 세션 토큰은 보통 같이
-// 커밋되지 않는다. 세션 토큰 없이 서명하면 살아있는 키도 InvalidClientTokenId가 나와
-// "폐기됨"으로 잘못 보고되므로, 아예 시도하지 않고 검증불가로 남긴다.
+// ASIA로 시작하는 키는 세션 토큰까지 있어야 인증된다. 세션 토큰은 보통 같이
+// 커밋되지 않으므로(pairAWSKeys가 못 찾으면) 검증을 시도하지 않고 검증불가로
+// 남긴다 — 세션 토큰 없이 서명하면 살아있는 키도 InvalidClientTokenId가 나와
+// "폐기됨"으로 잘못 보고되기 때문이다. 근처에서 세션 토큰까지 찾은 경우에만
+// (예: .env 파일에 세 값이 함께 있는 경우) buildCredential이 실제로 검증을 시도한다.
 func isTemporaryAWSKey(id string) bool {
 	return strings.HasPrefix(id, "ASIA")
 }
@@ -123,6 +146,21 @@ func buildAWSRequest(ctx context.Context, base string, cred credential) (*http.R
 	req.Header.Set("Content-Type", stsContentType)
 	req.Header.Set("X-Amz-Date", amzDate)
 
+	headers := []sigv4Header{
+		{"content-type", stsContentType},
+		{"host", u.Host},
+		{"x-amz-date", amzDate},
+	}
+	// 임시 자격증명(ASIA)은 세션 토큰도 요청에 실어야 인증된다. botocore를 포함해
+	// AWS의 참조 구현들이 이 헤더를 서명 대상(SignedHeaders)에 포함시키므로 그대로 따른다
+	// — 일부 문서는 서비스에 따라 서명 없이 덧붙이기만 해도 된다고 하지만, 서명이
+	// 틀리면 살아있는 키도 SignatureDoesNotMatch로 조용히 "검증불가" 처리되므로
+	// 검증된 쪽(서명 포함)을 택한다.
+	if cred.sessionToken != "" {
+		req.Header.Set("X-Amz-Security-Token", cred.sessionToken)
+		headers = append(headers, sigv4Header{"x-amz-security-token", cred.sessionToken})
+	}
+
 	sig := signV4(cred.secret, sigv4Input{
 		method:  http.MethodPost,
 		uri:     "/",
@@ -130,11 +168,7 @@ func buildAWSRequest(ctx context.Context, base string, cred credential) (*http.R
 		region:  awsRegion,
 		service: awsService,
 		now:     now,
-		headers: []sigv4Header{
-			{"content-type", stsContentType},
-			{"host", u.Host},
-			{"x-amz-date", amzDate},
-		},
+		headers: headers,
 	})
 
 	req.Header.Set("Authorization", fmt.Sprintf("%s Credential=%s/%s, SignedHeaders=%s, Signature=%s",

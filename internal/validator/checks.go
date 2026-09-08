@@ -14,6 +14,9 @@ import (
 type credential struct {
 	id     string
 	secret string
+	// sessionToken은 AWS STS가 발급한 임시 자격증명(ASIA로 시작하는 키)에만 쓰인다.
+	// 다른 발급처는 항상 빈 문자열이다.
+	sessionToken string
 }
 
 // provider는 발급처 하나에 대한 검증 방법이다.
@@ -118,19 +121,27 @@ func SupportedRules() map[string]string {
 // buildCredential은 finding에서 검증에 쓸 자격증명을 꺼낸다.
 // 요청을 만들 수 없으면 그 이유를 함께 돌려준다. 이유는 리포트에 그대로 실리므로
 // 키 값이 섞이지 않는 문장이어야 한다.
-func buildCredential(t Target, paired string) (credential, string, bool) {
+func buildCredential(t Target, aws awsPairing) (credential, string, bool) {
 	if t.Secret == "" {
 		return credential{}, "탐지된 값이 비어 있음", false
 	}
 
 	if t.RuleID == ruleAWSAccessKeyID {
 		if isTemporaryAWSKey(t.Secret) {
-			return credential{}, "STS 임시 자격증명이라 세션 토큰 없이는 검증할 수 없음", false
+			switch {
+			case aws.secret == "" && aws.sessionToken == "":
+				return credential{}, "STS 임시 자격증명이라 Secret Access Key와 세션 토큰이 둘 다 필요하나 찾지 못함", false
+			case aws.secret == "":
+				return credential{}, "STS 임시 자격증명이라 짝이 되는 Secret Access Key를 찾지 못해 서명할 수 없음", false
+			case aws.sessionToken == "":
+				return credential{}, "STS 임시 자격증명이라 세션 토큰 없이는 검증할 수 없음", false
+			}
+			return credential{id: t.Secret, secret: aws.secret, sessionToken: aws.sessionToken}, "", true
 		}
-		if paired == "" {
+		if aws.secret == "" {
 			return credential{}, "짝이 되는 AWS Secret Access Key를 찾지 못해 서명할 수 없음", false
 		}
-		return credential{id: t.Secret, secret: paired}, "", true
+		return credential{id: t.Secret, secret: aws.secret}, "", true
 	}
 
 	return credential{secret: t.Secret}, "", true

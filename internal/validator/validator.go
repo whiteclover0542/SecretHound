@@ -414,7 +414,7 @@ func isNetworkError(err error) bool {
 // 리포트 파일이 곧 유출 경로가 된다.
 func redact(s string, cred credential) string {
 	const mark = "[REDACTED]"
-	for _, v := range []string{cred.secret, cred.id} {
+	for _, v := range []string{cred.secret, cred.id, cred.sessionToken} {
 		if len(v) < 8 {
 			continue
 		}

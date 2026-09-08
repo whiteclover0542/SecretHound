@@ -74,6 +74,42 @@ func TestBuildAWSRequestSignsHeaders(t *testing.T) {
 	}
 }
 
+// 세션 토큰이 있으면 요청 헤더에도 실려야 하고, SignedHeaders 목록에도 포함돼야
+// 한다 — 헤더만 붙이고 서명 대상에서 빠지면 STS가 헤더 변조로 보고 거부할 수 있다.
+func TestBuildAWSRequestWithSessionTokenSignsHeader(t *testing.T) {
+	req, err := buildAWSRequest(t.Context(), "https://sts.example.com",
+		credential{id: "ASIAIOSFODNN7EXAMPLE", secret: "secret", sessionToken: "example-session-token"})
+	if err != nil {
+		t.Fatalf("요청 생성 실패: %v", err)
+	}
+
+	if got := req.Header.Get("X-Amz-Security-Token"); got != "example-session-token" {
+		t.Errorf("X-Amz-Security-Token 헤더 = %q, want %q", got, "example-session-token")
+	}
+
+	auth := req.Header.Get("Authorization")
+	if !strings.Contains(auth, "SignedHeaders=content-type;host;x-amz-date;x-amz-security-token") {
+		t.Errorf("세션 토큰이 SignedHeaders에 없음: %s", auth)
+	}
+}
+
+// 세션 토큰이 없으면(장기 자격증명) 기존과 동일하게 헤더가 붙지 않아야 한다 —
+// 회귀 확인용.
+func TestBuildAWSRequestWithoutSessionTokenOmitsHeader(t *testing.T) {
+	req, err := buildAWSRequest(t.Context(), "https://sts.example.com",
+		credential{id: "AKIAIOSFODNN7EXAMPLE", secret: "secret"})
+	if err != nil {
+		t.Fatalf("요청 생성 실패: %v", err)
+	}
+
+	if got := req.Header.Get("X-Amz-Security-Token"); got != "" {
+		t.Errorf("세션 토큰이 없는데 헤더가 붙음: %q", got)
+	}
+	if strings.Contains(req.Header.Get("Authorization"), "x-amz-security-token") {
+		t.Error("세션 토큰이 없는데 SignedHeaders에 포함됨")
+	}
+}
+
 func TestPairAWSKeysPrefersSamePath(t *testing.T) {
 	targets := []Target{
 		{RuleID: ruleAWSAccessKeyID, Path: "app/config.py", Line: 10, Secret: "AKIA0000000000000001"},
@@ -83,7 +119,7 @@ func TestPairAWSKeysPrefersSamePath(t *testing.T) {
 	}
 
 	pairs := pairAWSKeys(targets)
-	if got := pairs[0]; got != "near" {
+	if got := pairs[0].secret; got != "near" {
 		t.Errorf("같은 파일의 가장 가까운 줄을 골라야 한다: got %q, want %q", got, "near")
 	}
 }
@@ -96,7 +132,7 @@ func TestPairAWSKeysFallsBackAcrossFiles(t *testing.T) {
 		{RuleID: ruleAWSSecretKey, Path: ".env", Line: 2, Secret: "elsewhere"},
 	}
 
-	if got := pairAWSKeys(targets)[0]; got != "elsewhere" {
+	if got := pairAWSKeys(targets)[0].secret; got != "elsewhere" {
 		t.Errorf("다른 파일의 후보를 써야 한다: got %q", got)
 	}
 }
@@ -111,7 +147,7 @@ func TestPairAWSKeysNoCandidates(t *testing.T) {
 	}
 
 	// 짝이 없으면 요청을 만들지 않고 이유를 남긴다.
-	_, reason, ok := buildCredential(targets[0], "")
+	_, reason, ok := buildCredential(targets[0], awsPairing{})
 	if ok {
 		t.Fatal("짝 없이 자격증명을 만들면 안 된다")
 	}
@@ -121,16 +157,62 @@ func TestPairAWSKeysNoCandidates(t *testing.T) {
 }
 
 // ASIA 키는 세션 토큰 없이 검증하면 살아있어도 InvalidClientTokenId 가 나온다.
-// 그 응답을 "폐기됨"으로 보고하면 진짜 유출을 안전하다고 말하는 셈이라 시도 자체를 막는다.
-func TestTemporaryAWSKeyIsNotValidated(t *testing.T) {
+// 그 응답을 "폐기됨"으로 보고하면 진짜 유출을 안전하다고 말하는 셈이라, 세션 토큰을
+// 못 찾은 동안은 시도 자체를 막는다.
+func TestTemporaryAWSKeyWithoutSessionTokenIsNotValidated(t *testing.T) {
 	target := Target{RuleID: ruleAWSAccessKeyID, Path: "a.py", Secret: "ASIA0000000000000001"}
 
-	_, reason, ok := buildCredential(target, "paired-secret")
+	_, reason, ok := buildCredential(target, awsPairing{secret: "paired-secret"})
 	if ok {
-		t.Fatal("임시 자격증명은 검증을 시도하지 않아야 한다")
+		t.Fatal("세션 토큰 없이는 검증을 시도하지 않아야 한다")
 	}
 	if !strings.Contains(reason, "세션 토큰") {
 		t.Errorf("이유에 원인이 드러나야 한다: %q", reason)
+	}
+}
+
+// 근처에서 Secret Access Key와 세션 토큰을 모두 찾으면 임시 자격증명도 검증을 시도해야 한다
+// — 셋이 함께 유출되는(예: .env 파일에 세 값이 나란히 있는) 경우가 실제로 있다.
+func TestTemporaryAWSKeyWithSessionTokenIsValidated(t *testing.T) {
+	target := Target{RuleID: ruleAWSAccessKeyID, Path: "a.py", Secret: "ASIA0000000000000001"}
+
+	cred, _, ok := buildCredential(target, awsPairing{secret: "paired-secret", sessionToken: "paired-token"})
+	if !ok {
+		t.Fatal("Secret과 세션 토큰이 모두 있으면 검증을 시도해야 한다")
+	}
+	if cred.sessionToken != "paired-token" {
+		t.Errorf("credential에 세션 토큰이 실려야 한다: got %q", cred.sessionToken)
+	}
+}
+
+// 세 값이 근처에 함께 있으면 pairAWSKeys가 세션 토큰까지 찾아야 한다.
+func TestPairAWSKeysFindsNearbySessionToken(t *testing.T) {
+	targets := []Target{
+		{RuleID: ruleAWSAccessKeyID, Path: ".env", Line: 1, Secret: "ASIA0000000000000001"},
+		{RuleID: ruleAWSSecretKey, Path: ".env", Line: 2, Secret: "paired-secret"},
+		{RuleID: ruleAWSSessionToken, Path: ".env", Line: 3, Secret: "paired-token"},
+	}
+
+	got := pairAWSKeys(targets)[0]
+	if got.secret != "paired-secret" {
+		t.Errorf("secret = %q, want %q", got.secret, "paired-secret")
+	}
+	if got.sessionToken != "paired-token" {
+		t.Errorf("sessionToken = %q, want %q", got.sessionToken, "paired-token")
+	}
+}
+
+// 장기 자격증명(AKIA)은 세션 토큰이 근처에 있어도 무시해야 한다 — 애초에 필요하지 않다.
+func TestPairAWSKeysIgnoresSessionTokenForLongTermKey(t *testing.T) {
+	targets := []Target{
+		{RuleID: ruleAWSAccessKeyID, Path: ".env", Line: 1, Secret: "AKIA0000000000000001"},
+		{RuleID: ruleAWSSecretKey, Path: ".env", Line: 2, Secret: "paired-secret"},
+		{RuleID: ruleAWSSessionToken, Path: ".env", Line: 3, Secret: "unrelated-token"},
+	}
+
+	got := pairAWSKeys(targets)[0]
+	if got.sessionToken != "" {
+		t.Errorf("장기 자격증명에는 세션 토큰이 붙으면 안 된다: got %q", got.sessionToken)
 	}
 }
 
