@@ -142,8 +142,8 @@ CI에서 탐지 여부로 빌드를 실패시키려면 종료 코드를 나눠 �
 
 	cmd.Flags().StringVar(&outDir, "out", "", "리포트를 저장할 폴더 (기본: 지금 있는 폴더)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "검사만 하고 브라우저를 열지 않는다")
-	// 터미널을 쓰지 않는 사용자용 진입점(scan.bat)이 쓰는 플래그다. 폴더 경로를
-	// 타이핑하는 대신 창에서 고르게 한다.
+	// exe 를 탐색기에서 더블클릭했을 때 쓰는 플래그다. 폴더 경로를 타이핑하는
+	// 대신 창에서 고르게 한다 (cmd/secrethound/console_windows.go 참조).
 	cmd.Flags().BoolVar(&pick, "pick", false,
 		"검사할 폴더를 선택하는 창을 띄운다 (폴더를 직접 지정하면 무시됨, Windows 전용)")
 	// scan과 같은 이유로 기본 비활성이다. 탐지한 자격증명을 발급처로 내보내는

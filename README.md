@@ -31,13 +31,16 @@ CRITICAL  config.js@be880d7:1  github-pat  ghp_9m******2pXk  (신뢰도 100)
 
 ### 터미널을 쓰지 않는다면 (Windows)
 
-1. [Releases](https://github.com/whiteclover0542/secrethound/releases)에서
+1. [Releases](https://github.com/whiteclover0542/SecretHound/releases)에서
    `secrethound_..._windows_amd64.zip` 을 받는다
 2. 압축을 푼다
-3. 안에 있는 **시크릿 검사하기** 아이콘을 두 번 클릭하고, 창에서 검사할 폴더를 고른다
+3. `secrethound.exe` 를 두 번 클릭하고, 창에서 검사할 폴더를 고른다
 
-검사가 끝나면 결과가 브라우저에 자동으로 열린다. 폴더를 아이콘 위로 끌어다 놓아도 된다.
-Go 설치도, 명령어 입력도 필요 없다.
+검사가 끝나면 결과가 브라우저에 자동으로 열린다. 폴더를 exe 위로 끌어다 놓아도 된다.
+설치 과정이 없고, Go도 명령어 입력도 필요 없다. 지울 때는 폴더째 삭제하면 된다.
+
+> exe를 터미널에서 실행하면 평소처럼 CLI로 동작한다. 더블클릭으로 실행됐을 때만
+> 폴더 선택 창을 띄우는데, 이는 콘솔에 이 프로세스만 붙어 있는지로 구분한다.
 
 > 처음 실행할 때 "Windows의 PC 보호" 경고가 뜨면 **추가 정보 → 실행** 을 누르면 된다.
 > 유료 코드 서명 인증서가 없어서 나오는 경고이지, 악성 코드가 발견됐다는 뜻이 아니다.

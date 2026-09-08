@@ -40,10 +40,36 @@ var formatExt = map[string]string{
 	formatHTML: ".html",
 }
 
+// findingsExit는 "시크릿을 찾았다"는 종료 코드를 main까지 전달한다.
+//
+// 커맨드 안에서 os.Exit을 부르면 콘솔 코드페이지를 되돌리거나 더블클릭 창을 붙잡는
+// 마무리 작업을 건너뛰게 되므로, 종료는 main 한 곳에서만 한다.
+var findingsExit bool
+
 func main() {
-	if err := rootCmd().Execute(); err != nil {
+	// 콘솔은 사용자 것이라 빌려 쓰는 셈이다. 끝나면 되돌린다.
+	restoreConsole := setupConsole()
+
+	// 탐색기에서 더블클릭했거나 폴더를 끌어다 놓았으면 커맨드를 대신 채워준다.
+	args, fromExplorer := explorerLaunch(os.Args[1:])
+
+	cmd := rootCmd()
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+
+	if fromExplorer {
+		// 더블클릭으로 열린 창은 프로그램이 끝나는 순간 사라진다. 결과를 읽을
+		// 시간을 준다.
+		waitForKey()
+	}
+	restoreConsole()
+
+	switch {
+	case err != nil:
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(exitError)
+	case findingsExit:
+		os.Exit(exitFindings)
 	}
 }
 
@@ -231,7 +257,7 @@ func scanCmd() *cobra.Command {
 			}
 
 			if useExit && len(result.Findings) > 0 {
-				os.Exit(exitFindings)
+				findingsExit = true
 			}
 			return nil
 		},
