@@ -1,0 +1,167 @@
+name: release
+
+# 태그를 밀면 각 OS용 실행 파일을 만들어 GitHub Releases에 올린다.
+#
+# 이 워크플로가 있는 이유는 하나다 — 사용자가 Go를 설치하지 않고도 쓸 수 있어야 한다.
+#
+# 잡을 OS별로 나눈 이유:
+#   - Windows 배포본에 넣는 바로가기(.lnk)는 Windows COM(WScript.Shell)이 있어야 만든다
+#   - tar.gz 는 리눅스에서 묶어야 실행 권한(chmod +x)이 보존된다.
+#     Windows에서 묶으면 받는 쪽에서 실행 권한이 없어 그냥은 실행되지 않는다
+
+on:
+  push:
+    tags: ["v*"]
+  # 태그를 밀기 전에 패키징이 되는지 확인할 수 있게 수동 실행도 열어둔다.
+  # 이때는 릴리스를 만들지 않고 아티팩트만 남긴다.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.pick.outputs.value }}
+    steps:
+      - id: pick
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "value=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # 릴리스는 되돌리기 어려우므로 태그를 자른 커밋에서 한 번 더 확인한다.
+      - name: 테스트
+        run: go test ./...
+
+      - name: 빌드
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.value }}
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "0"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # -s -w 는 디버그 정보를 빼 배포 크기를 줄인다.
+          go build -trimpath -ldflags "-s -w -X main.version=$env:VERSION" `
+            -o stage/secrethound.exe ./cmd/secrethound
+          if ($LASTEXITCODE -ne 0) { throw '빌드 실패' }
+
+      # 터미널을 쓰지 않는 사용자가 대상이라, 실행 파일만 넣지 않고
+      # 실행기(scan.bat)와 아이콘이 붙은 바로가기, 안내문을 함께 넣는다.
+      - name: 패키지 구성
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+          Copy-Item 'packaging/windows/scan.bat' stage
+          Copy-Item 'packaging/windows/사용법.txt' stage
+          Copy-Item 'LICENSE' stage
+
+          New-Item -ItemType Directory -Path dist-out -Force | Out-Null
+          & ./packaging/windows/make-shortcut.ps1 -Folder stage
+          & ./packaging/windows/make-zip.ps1 -Folder stage `
+            -Destination "dist-out/secrethound_${env:VERSION}_windows_amd64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist-out/*
+
+  # macOS 빌드는 보류 중이다. 크로스 컴파일 자체는 되지만 실제 맥에서 돌려본 적이
+  # 없어서(서명·Gatekeeper 문제도 확인 필요) 검증되지 않은 것을 배포하지 않는다.
+  # 리눅스는 GitHub Actions 러너가 쓰므로 action.yml 이 이 파일을 받아 간다.
+  unix:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 빌드와 패키징
+        env:
+          VERSION: ${{ needs.version.outputs.value }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p stage dist-out
+          go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+            -o stage/secrethound ./cmd/secrethound
+          chmod +x stage/secrethound
+          cp LICENSE README.md stage/
+          tar -czf "dist-out/secrethound_${VERSION}_${GOOS}_${GOARCH}.tar.gz" -C stage .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist-out/*
+
+  publish:
+    needs: [version, windows, unix]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 체크섬
+        run: |
+          set -euo pipefail
+          cd artifacts
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 릴리스 생성
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.value }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<'NOTES'
+          ## 설치
+
+          **Windows** — `secrethound_VERSION_windows_amd64.zip` 을 받아 압축을 풀고,
+          안에 있는 **시크릿 검사하기** 아이콘을 두 번 클릭하세요. Go 설치는 필요 없습니다.
+
+          처음 실행할 때 "Windows의 PC 보호" 경고가 뜨면 **추가 정보 → 실행** 을 누르면 됩니다.
+          유료 코드 서명 인증서가 없어서 나오는 경고입니다.
+
+          **리눅스** — `.tar.gz` 를 풀어 실행하세요. (macOS 배포본은 아직 준비 중입니다.
+          맥에서 쓰시려면 소스에서 `go build` 하세요.)
+
+          ```
+          secrethound check ./myrepo
+          ```
+
+          받은 파일이 온전한지는 `SHA256SUMS.txt` 로 확인할 수 있습니다.
+          NOTES
+          sed -i "s/VERSION/${VERSION}/g" notes.md
+          gh release create "$VERSION" artifacts/* --title "$VERSION" --notes-file notes.md

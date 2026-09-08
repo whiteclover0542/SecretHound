@@ -119,6 +119,39 @@ cases:
     traps:
       - { line: 2, note: "Twilio Account SID는 식별자이지 자격증명이 아니다" }
 
+  # ---------------------------------------------------------------- 국내 서비스
+  # 값은 전부 합성한 난수다. 자릿수와 문자셋만 각 발급처의 실제 키 모양을 따랐고,
+  # 표기 형태(변수명·헤더명·URL 배치)는 국내 코드에서 실제로 쓰이는 방식을 옮겼다.
+  - path: src/kr_openapi.py
+    secrets:
+      - { line: 4, kind: kr-public-data-service-key, note: "공공데이터포털 Encoding 키. %2F·%3D%3D 로 URL 인코딩된 형태" }
+      - { line: 15, kind: naver-openapi-client-secret, note: "네이버 검색 API 인증 헤더" }
+      - { line: 25, kind: kr-public-data-service-key, note: "Decoding 키. 포털이 키를 \"일반 인증키(Encoding/Decoding)\"로 부르는 탓에 serviceKey 라는 단어가 안 나오는 표기" }
+    traps:
+      - { line: 8, note: "serviceKey 파라미터에 상수를 참조만 하는 줄. 값이 없으므로 시크릿이 아니다" }
+      - { line: 14, note: "네이버 Client ID는 공개 식별자이지 자격증명이 아니다" }
+
+  - path: src/kr_payment.js
+    secrets:
+      - { line: 1, kind: toss-payments-secret-key, note: "토스페이먼츠 라이브 시크릿 키" }
+      - { line: 4, kind: kakao-rest-api-key, note: "카카오 REST API 키. camelCase 변수명" }
+      - { line: 8, kind: portone-api-secret, note: "포트원 REST API 키. 숫자로만 이뤄져 엔트로피가 낮아 게이트를 3.0으로 낮춰야 잡힌다" }
+      - { line: 9, kind: portone-api-secret, note: "포트원 REST API 시크릿" }
+    traps:
+      - { line: 2, note: "토스페이먼츠 클라이언트 키. 브라우저에 노출되도록 설계된 공개값" }
+      - { line: 5, note: "카카오 JavaScript 키. REST API 키와 같은 32자리 hex지만 공개 설계값이다" }
+      - { line: 10, note: "포트원 가맹점 식별코드(merchant_uid)는 공개 식별자" }
+
+  - path: config/kr_services.env
+    secrets:
+      - { line: 2, kind: kr-public-data-service-key, note: "URL 쿼리스트링에 박힌 서비스 키. 따옴표가 없어 키워드 앵커가 필요한 대표 사례" }
+      - { line: 4, kind: naver-openapi-client-secret, note: "네이버 Client Secret" }
+      - { line: 5, kind: ncp-access-key-id, note: "NCP Access Key ID" }
+      - { line: 6, kind: ncp-secret-key, note: "NCP Secret Key. 이름 앞이 `_`라 aws-secret-access-key-bare의 \b 앵커에 걸리지 않아 오분류되지 않는다" }
+      - { line: 7, kind: kakao-admin-key, note: "카카오 Admin 키" }
+    traps:
+      - { line: 3, note: "NEXT_PUBLIC_ 접두사가 붙은 네이버 Client ID. 공개 식별자이며, 앞에 다른 단어가 붙어도 시크릿 룰이 오작동하지 않아야 한다" }
+
   # ---------------------------------------------------------------- 오탐 유발 케이스
   - path: .env.example
     secrets: []

@@ -29,52 +29,60 @@ CRITICAL  config.js@be880d7:1  github-pat  ghp_9m******2pXk  (신뢰도 100)
 
 ## 빠른 시작
 
-**1. 설치**
+### 터미널을 쓰지 않는다면 (Windows)
 
-```bash
-go install github.com/whiteclover0542/secrethound/cmd/secrethound@latest
+1. [Releases](https://github.com/whiteclover0542/secrethound/releases)에서
+   `secrethound_..._windows_amd64.zip` 을 받는다
+2. 압축을 푼다
+3. 안에 있는 **시크릿 검사하기** 아이콘을 두 번 클릭하고, 창에서 검사할 폴더를 고른다
+
+검사가 끝나면 결과가 브라우저에 자동으로 열린다. 폴더를 아이콘 위로 끌어다 놓아도 된다.
+Go 설치도, 명령어 입력도 필요 없다.
+
+> 처음 실행할 때 "Windows의 PC 보호" 경고가 뜨면 **추가 정보 → 실행** 을 누르면 된다.
+> 유료 코드 서명 인증서가 없어서 나오는 경고이지, 악성 코드가 발견됐다는 뜻이 아니다.
+
+### 터미널을 쓴다면
+
+```console
+$ secrethound check ./myrepo
+검사한 곳   ./myrepo
+검사 범위   지금 있는 파일 1개 + 커밋 2개
+결과        유출된 것으로 보이는 키 1건 (critical 1)
+
+! 파일에서 지우기 전에 발급처에서 키를 먼저 폐기(revoke)하세요.
+  지우기만 하면 키는 그대로 살아있습니다. 폐기 절차는 리포트에 있습니다.
+
+저장된 리포트
+  C:\work\secrethound-report.html
+  C:\work\secrethound-report.md
 ```
 
-Go가 없거나 소스를 직접 빌드하고 싶다면 아래 [설치](#설치) 참고.
+`check` 하나로 다음이 전부 끝난다.
 
-**2. 스캔할 폴더에서 실행**
+- 대상이 git 저장소면 **커밋 히스토리까지** 함께 검사한다
+- 결과를 HTML과 마크다운 두 형식으로 저장한다
+- HTML 리포트를 기본 브라우저로 연다
 
-```bash
-secrethound scan . --history
-```
+폴더를 생략하면 지금 있는 폴더를 검사한다. 플래그를 직접 조립하거나 CI에 붙일 때는
+종료 코드를 나눠 주는 [`scan`](#사용법) 을 쓴다.
 
-- `.` 은 "지금 있는 폴더"라는 뜻이다. 다른 폴더를 보고 싶으면 그 경로로 바꾸면 된다.
-  예: `secrethound scan C:\projects\myrepo --history`
-- `--history` 를 붙이면 지금은 지워졌지만 **과거 커밋에는 남아있는** 시크릿까지 찾는다.
-  빼면 지금 파일만 본다.
-
-> **Windows PowerShell 사용자**: 소스에서 직접 빌드해 `secrethound.exe` 를 만들었다면,
-> 그 파일이 있는 폴더에서 `secrethound scan ...` 이 아니라 앞에 `.\` 를 붙인
-> `.\secrethound.exe scan . --history` 로 실행해야 한다. PowerShell은 현재 폴더의
-> 실행 파일을 자동으로 찾지 않는다 (`go install` 로 설치했다면 이 문제 없음).
-
-**3. 결과 읽기**
-
-심각도(`CRITICAL`/`HIGH`/...), 위치(`파일:줄번호`), 어떤 종류의 키인지, 값의 일부
-(마스킹됨)가 한 줄씩 나온다. 아무것도 안 뜨고 "탐지된 시크릿이 없습니다"만 나오면
-정상이다 — 시크릿이 없다는 뜻이다.
-
-**4. (선택) 브라우저에서 표로 보기**
-
-```bash
-secrethound scan . --history --format json --output report.json
-```
-
-생성된 `report.json`을 [`web/dashboard.html`](web/dashboard.html) 파일을 브라우저로
-열어 화면에 끌어다 놓으면 표로 볼 수 있다. 빌드나 서버가 필요 없다.
+**결과 읽기** — 심각도(`CRITICAL`/`HIGH`/...), 위치(`파일:줄번호`), 키 종류, 값의 일부
+(마스킹됨)가 표로 나온다. "유출된 시크릿을 찾지 못했습니다"만 나오면 정상이다.
 
 ## 설치
 
+**실행 파일 내려받기 (Go 필요 없음)** —
+[Releases](https://github.com/whiteclover0542/secrethound/releases)에서 OS에 맞는 파일을 받는다.
+Windows용 zip에는 실행 파일과 함께 더블클릭용 바로가기가 들어있다.
+
+**Go가 있다면**
+
 ```bash
 go install github.com/whiteclover0542/secrethound/cmd/secrethound@latest
 ```
 
-소스에서 빌드하려면:
+**소스에서 빌드**
 
 ```bash
 git clone https://github.com/whiteclover0542/secrethound.git
@@ -82,13 +90,36 @@ cd secrethound
 go build -o secrethound ./cmd/secrethound
 ```
 
-룰셋은 바이너리에 내장되어 있어 별도 설정 파일 없이 바로 동작한다.
+룰셋과 리포트 페이지는 바이너리에 내장되어 있어 별도 파일 없이 바로 동작한다.
+
+> **Windows PowerShell 사용자**: 소스에서 직접 빌드했다면 `secrethound scan ...` 이
+> 아니라 앞에 `.\` 를 붙인 `.\secrethound.exe scan ...` 으로 실행해야 한다. PowerShell은
+> 현재 폴더의 실행 파일을 자동으로 찾지 않는다 (릴리스 zip이나 `go install` 로 설치했다면
+> 해당 없음).
 
 ## 사용법
 
-위 [빠른 시작](#빠른-시작)에서 다룬 기본 스캔 이후, 상황별로 자주 쓰는 명령이다.
+커맨드는 둘로 나뉜다. `check` 는 사람이 결과를 눈으로 보는 용도로, 플래그 없이 항상
+같은 일을 한다. `scan` 은 플래그로 세부를 제어하고 종료 코드로 탐지 여부를 알리는
+CI용이다. 시크릿을 찾아도 `check` 는 0으로 끝나고 `scan` 은 1로 끝난다.
 
 ```bash
+# 폴더 하나를 검사하고 결과를 브라우저로 열기 (히스토리 포함 여부는 알아서 판단)
+secrethound check ./myrepo
+
+# 검사만 하고 브라우저는 열지 않기
+secrethound check ./myrepo --no-open
+
+# 리포트를 다른 폴더에 저장하기
+secrethound check ./myrepo --out ./reports
+```
+
+아래는 `scan` 으로 상황별 세부 제어가 필요할 때 쓰는 명령이다.
+
+```bash
+# 마크다운 리포트를 만들어 바로 열기
+secrethound scan ./myrepo --history --format md --open
+
 # 최근 100개 커밋만 스캔 (대형 레포라 히스토리 스캔이 오래 걸릴 때)
 secrethound scan ./myrepo --history --max-commits 100
 
@@ -113,8 +144,9 @@ secrethound rules
 |---|---|
 | `--history` | git 커밋 히스토리까지 스캔 (과거에 지운 시크릿 탐지) |
 | `--max-commits N` | 히스토리 스캔 대상 커밋 수 제한 (0 = 전체) |
-| `-f, --format` | 출력 형식 `text` \| `json` (기본 `text`) |
+| `-f, --format` | 출력 형식 `text` \| `json` \| `md` \| `html` (기본 `text`) |
 | `-o, --output` | 결과를 파일로 저장 (기본: 표준 출력) |
+| `--open` | 저장한 리포트를 기본 브라우저로 연다 (`--output` 생략 시 현재 폴더에 만든다) |
 | `-r, --rules` | 사용자 룰셋 파일 경로 (기본: 내장 룰셋) |
 | `--no-color` | 색상 출력 비활성화 |
 | `--report` | 일반 출력과 별개로 JSON 리포트를 파일에 저장 |
@@ -138,9 +170,16 @@ CI가 "시크릿 발견"과 "도구 실행 실패"를 구분할 수 있도록 �
 ## 탐지 대상
 
 AWS, GitHub, GitLab, Slack, Stripe, Google/GCP, OpenAI, Anthropic, SendGrid, Twilio,
-npm, Shopify, Discord, Telegram, Azure, Heroku, PEM 개인키, JWT, DB 접속 문자열 등
-**29개 룰**을 기본 제공하며, 전부 평가 코퍼스로 검증되어 있다.
-전체 목록은 `secrethound rules` 로 확인할 수 있다.
+npm, Shopify, Discord, Telegram, Azure, Heroku, PEM 개인키, JWT, DB 접속 문자열, 그리고
+공공데이터포털·카카오·네이버·NCP·토스페이먼츠·포트원 등 **37개 룰**을 기본 제공하며,
+전부 평가 코퍼스로 검증되어 있다. 전체 목록은 `secrethound rules` 로 확인할 수 있다.
+
+국내 서비스는 해외 서비스와 달리 값만 보고 발급처를 알 수 있는 접두사를 공식화한 곳이
+드물다. 그래서 형식이 문서로 확인되는 것(카카오 `KakaoAK`, 토스페이먼츠 `live_sk_`)만
+접두사로 잡고, 나머지는 변수·헤더 이름(`serviceKey`, `X-Naver-Client-Secret`)을 앵커로
+삼는다. 자릿수를 추측한 접두사 룰은 추측이 틀렸을 때 조용히 아무것도 못 잡지만, 이름은
+그 서비스를 쓰는 코드라면 반드시 나오고 바뀌지도 않기 때문이다. 대신 값이 이름과 다른
+줄에 있으면 놓친다 — 그 경우는 `generic-api-key`가 medium으로 받는다.
 
 Stripe publishable key나 Google OAuth Client ID처럼 **공개되도록 설계된 값은 탐지하지 않는다.**
 유출이 아니므로 보고해봐야 노이즈만 된다 ([평가 결과](eval/README.md) 참조).
@@ -234,7 +273,7 @@ AWS 공개 테스트 벡터로 검증). 서명이 틀리면 STS가 `SignatureDoe
 경우에만 `X-Amz-Security-Token` 을 포함해 검증한다.
 
 검증 대상은 오탐 필터를 통과한 결과뿐이며, 같은 값이 여러 곳에서 발견되면 호출은
-한 번만 한다. 현재 29개 룰 중 **17개**가 검증 대상이며 발급처는 14곳이다
+한 번만 한다. 현재 37개 룰 중 **17개**가 검증 대상이며 발급처는 14곳이다
 (`secrethound rules` 로 확인 가능). Google API Key·Twilio·Shopify·JWT·PEM
 개인키·DB 접속 문자열 등은 공통 엔드포인트가 없거나 발급처가 정해져 있지 않아
 검증하지 않는다.
@@ -283,7 +322,7 @@ secrethound scan ./myrepo --history --baseline secrethound-baseline.json
 
 ## 병렬 스캔
 
-정규식 매칭(29개 룰)을 goroutine 워커 풀에 분산시킨다. 파일 순회와 `git log` 파싱
+정규식 매칭(37개 룰)을 goroutine 워커 풀에 분산시킨다. 파일 순회와 `git log` 파싱
 같은 수집 단계는 상태를 유지하며 순서대로 해석해야 해서 병렬화하지 않는다.
 
 ```bash
@@ -399,15 +438,29 @@ filter:
 히스토리만 지워도 키 자체는 여전히 유효하기 때문이다. 텍스트 출력에서는 리포트
 맨 아래 "대응 방법" 절에 이 정보가 룰·파일 단위로 한 번씩만 모여서 나온다.
 
-## 웹 대시보드
+## 리포트
 
-빌드나 서버 없이 브라우저에서 [`web/dashboard.html`](web/dashboard.html) 파일 하나만 열면 된다.
+같은 결과를 네 가지 형식으로 낸다. 무엇을 쓸지는 **누가 읽느냐**로 갈린다.
+
+| 형식 | 쓰임 |
+|---|---|
+| `text` | 터미널에서 바로 확인 (기본) |
+| `html` | 리포트가 심어진 대시보드 한 장. 열면 바로 표가 뜬다 |
+| `md` | 메모장·노션·깃허브에 그대로 붙여넣기 |
+| `json` | CI·다른 도구가 소비 (스키마 고정) |
 
 ```bash
-secrethound scan ./myrepo --history --format json --output report.json
+secrethound scan ./myrepo --history --format html --output report.html --open
 ```
 
-만들어진 `report.json`을 대시보드 페이지에 드래그하거나 클릭해서 선택하면 된다.
+`--format html` 은 [`web/dashboard.html`](web/dashboard.html) 페이지에 리포트 JSON을
+함께 심어 **파일 하나**로 내보낸다. 그래서 JSON을 따로 저장했다가 대시보드에 끌어다
+놓는 과정이 필요 없다 — 만들어진 파일을 열면 바로 표가 뜬다. `check` 는 이 형식을
+기본으로 만들고 브라우저까지 열어준다.
+
+`web/dashboard.html` 을 그냥 열면 예전처럼 JSON 파일을 끌어다 놓는 화면이 나온다.
+두 경로가 같은 페이지를 쓰므로 화면 코드를 두 벌 유지하지 않는다.
+
 페이지는 순수 정적 파일이라 리포트 내용이 어디로도 전송되지 않고, 로컬 브라우저
 안에서만 렌더링된다.
 
@@ -434,13 +487,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0      # --history 를 쓰려면 전체 히스토리가 필요하다
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
       - uses: whiteclover0542/secrethound@main
         with:
           history: "true"
 ```
+
+액션은 릴리스에 올라간 실행 파일을 받아 쓰므로 `actions/setup-go` 가 필요 없다.
+받지 못하는 경우에만 소스 빌드로 되돌아가는데, 그때는 Go가 있어야 한다.
 
 | 입력 | 기본값 | 설명 |
 |---|---|---|
@@ -451,6 +504,7 @@ jobs:
 | `fail-on-detection` | `true` | 탐지 시 워크플로 실패 여부 |
 | `report-path` | (임시 파일) | JSON 리포트 저장 경로 |
 | `baseline-path` | (미사용) | 이 baseline 파일에 있는 시크릿은 제외하고 새로 생긴 것만 탐지 |
+| `version` | (최신 릴리스) | 사용할 secrethound 릴리스 태그 |
 
 출력 `findings` 로 탐지 건수를 받을 수 있다.
 
@@ -459,7 +513,7 @@ jobs:
 
 ## 정확도 측정
 
-레이블된 코퍼스(실제 시크릿 32건 + 오탐 유발 케이스 28건)로 정확도를 측정한다.
+레이블된 코퍼스(실제 시크릿 45건 + 오탐 유발 케이스 34건)로 정확도를 측정한다.
 
 ```bash
 go run ./eval                  # precision / recall / F1

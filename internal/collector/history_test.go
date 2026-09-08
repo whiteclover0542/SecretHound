@@ -102,12 +102,19 @@ filter:
 	}
 }
 
+// 임시 디렉토리의 상위가 git 저장소인 환경(홈 디렉토리를 저장소로 쓰는 경우가 있다)
+// 에서는 git이 위로 거슬러 올라가 그 저장소를 찾아낸다. 그러면 이 테스트가 만들려던
+// "저장소가 아닌 경로"라는 상황 자체가 성립하지 않으므로, 탐색 상한을 걸어
+// 실행 환경과 무관하게 같은 조건을 만든다.
 func TestWalkHistoryRejectsNonRepo(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git이 설치되어 있지 않아 건너뜀")
 	}
 
-	_, err := newTestCollector(t).WalkHistory(t.TempDir(), HistoryOptions{}, func(Change) error {
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+
+	_, err := newTestCollector(t).WalkHistory(dir, HistoryOptions{}, func(Change) error {
 		return nil
 	})
 	if err == nil {

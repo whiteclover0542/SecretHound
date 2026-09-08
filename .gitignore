@@ -20,3 +20,12 @@ report.json
 # OS
 .DS_Store
 Thumbs.db
+
+# 릴리스 워크플로가 만드는 중간 산출물
+/dist-out/
+/stage/
+/build/
+
+# check 커맨드가 만드는 리포트 (레포 안에서 돌리면 여기 생긴다)
+secrethound-report.html
+secrethound-report.md

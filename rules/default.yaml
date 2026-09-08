@@ -352,6 +352,156 @@ rules:
     remediation: >-
       Heroku Dashboard → Account settings → API Key에서 Regenerate API Key.
 
+  # ---------------------------------------------------------------- 국내 서비스
+  #
+  # 국내 서비스는 해외 서비스와 사정이 다르다. AWS의 `AKIA`, Stripe의 `sk_live_`처럼
+  # 값만 보고 발급처를 특정할 수 있는 접두사를 공식 문서에 못박아 둔 곳이 드물다.
+  # 그래서 이 섹션은 두 갈래로 나눠 썼다.
+  #
+  #   (a) 접두사 기반 — 형식이 공식 문서로 확인되는 것만. 값이 어디에 있든 잡힌다.
+  #       카카오 `KakaoAK`, 토스페이먼츠 `test|live_sk_`
+  #   (b) 키워드 앵커 기반 — 그 외 전부. `이름 = 값` 형태여야만 잡힌다.
+  #       공공데이터포털, 네이버, NCP, 포트원
+  #
+  # (b)를 택한 이유: 값의 자릿수를 추측해서 접두사 룰을 쓰면 발급처가 형식을 바꾸거나
+  # 애초에 추측이 틀렸을 때 **조용히 아무것도 안 잡힌다**. 반면 변수·헤더 이름
+  # (`serviceKey`, `X-Naver-Client-Secret`)은 그 서비스를 쓰는 코드라면 반드시 등장하고
+  # 바뀔 일도 없다. 미탐을 줄이는 쪽으로 불확실성을 넘긴 선택이다.
+  #
+  # (b)의 알려진 한계: 값이 이름과 다른 줄에 있으면 줄 단위 스캔으로는 못 잡는다
+  # (Twilio에서와 같은 한계다). 그 경우 generic-api-key가 medium으로 받는다.
+
+  - id: kr-public-data-service-key
+    description: 공공데이터포털(data.go.kr) 서비스 키
+    severity: high
+    keywords: [servicekey, service_key, service-key, encodingkey, encoding_key, decodingkey, decoding_key, data.go.kr, publicdata, public_data]
+    # 값이 URL 쿼리스트링에 그대로 박히는 일이 잦아(`?serviceKey=...&numOfRows=10`)
+    # 따옴표를 선택으로 두고, URL 인코딩된 키(`%2B` `%2F` `%3D%3D`)까지 문자셋에 넣었다.
+    #
+    # 이름은 세 갈래를 받는다. 포털이 발급 화면에서 키를 "일반 인증키(Encoding)" /
+    # "(Decoding)"으로 부르기 때문에 코드에서 serviceKey 대신 encodingKey·decodingKey로
+    # 저장하는 경우가 흔하다. 둘은 같은 값의 URL 인코딩 여부만 다른 한 쌍이라 어느 쪽이
+    # 유출돼도 같은 키가 유출된 것이다.
+    regex: '(?i)(?:(?:service|encoding|decoding)[_\-]?key|(?:data[_\-.]?go[_\-.]?kr|public[_\-.]?data)[_\-.]?(?:api[_\-.]?)?key)\b[^a-zA-Z0-9%]{0,20}[''"]?([A-Za-z0-9%+/=]{40,})'
+    secret_group: 1
+    entropy: 3.5
+    tags: [korea, public-data, gov]
+    remediation: >-
+      공공데이터포털 → 마이페이지 → 오픈API → 개발계정 상세에서 인증키를 재발급하라.
+      일반 인증키(Encoding/Decoding)는 API별이 아니라 **계정 단위**라서, 재발급하면 그
+      계정으로 활용신청한 모든 API의 호출 코드를 함께 고쳐야 한다. Encoding 키와
+      Decoding 키는 같은 값의 URL 인코딩 여부만 다르므로 둘 중 하나만 유출돼도 둘 다 폐기 대상이다.
+
+  - id: kakao-rest-api-key
+    description: 카카오 REST API 키
+    severity: high
+    keywords: [kakaoak, kakao]
+    # 두 가지 표기를 한 룰에서 받는다.
+    #   Authorization: KakaoAK <키>   — 헤더 형태
+    #   kakao_rest_api_key = "<키>"   — 설정 변수 형태
+    # JavaScript 키도 같은 32자리 hex라 값만으로는 구분되지 않는데, 그건 클라이언트에
+    # 노출되도록 설계된 공개값이라 시크릿이 아니다. 그래서 값 단독 매칭은 하지 않고
+    # 위 두 문맥에서만 잡는다 (JavaScript 키는 어느 쪽에도 등장하지 않는다).
+    regex: '(?i)(kakaoak\s+|kakao[_\-.]?rest[_\-.]?api[_\-.]?key\b[^a-zA-Z0-9]{0,20}[''"]?)([0-9a-f]{32})\b'
+    secret_group: 2
+    entropy: 3.0
+    tags: [korea, kakao]
+    remediation: >-
+      Kakao Developers → 내 애플리케이션 → 앱 키에서 REST API 키를 재발급하라.
+      앱 키 재발급은 네 종류(네이티브/REST/JavaScript/Admin)가 각각 따로 동작한다.
+      플랫폼 설정에 허용 IP·리다이렉트 URI를 걸어두면 재발급 전까지 피해를 줄일 수 있다.
+
+  - id: kakao-admin-key
+    description: 카카오 Admin 키
+    severity: critical
+    keywords: [kakao]
+    # Admin 키는 앱의 모든 API를 사용자 동의 없이 호출할 수 있어 REST API 키보다 위험하다.
+    regex: '(?i)kakao[_\-.]?admin[_\-.]?key\b[^a-zA-Z0-9]{0,20}[''"]?([0-9a-f]{32})\b'
+    secret_group: 1
+    entropy: 3.0
+    tags: [korea, kakao]
+    remediation: >-
+      Kakao Developers → 내 애플리케이션 → 앱 키에서 Admin 키를 즉시 재발급하라.
+      Admin 키는 사용자 동의 절차를 건너뛰고 앱 전체를 조작할 수 있으므로 유출 시
+      REST API 키보다 우선순위가 높다. 재발급 후 서버 환경변수로만 주입하도록 바꿔라.
+
+  - id: naver-openapi-client-secret
+    description: 네이버 오픈API Client Secret
+    severity: high
+    keywords: [naver]
+    # Client ID는 공개 식별자라 제외한다 (Google OAuth Client ID를 뺀 것과 같은 이유).
+    # 시크릿 자릿수는 공식 문서에 명시돼 있지 않아 하한만 두고 상한은 넉넉히 잡았다.
+    regex: '(?i)(x-naver-client-secret|naver[_\-.]?client[_\-.]?secret)\b[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9_]{8,64})'
+    secret_group: 2
+    entropy: 2.5
+    tags: [korea, naver]
+    remediation: >-
+      네이버 개발자센터 → Application → 내 애플리케이션 → 해당 앱의 개요에서
+      Client Secret을 재발급하라. Client ID는 그대로 유지되므로 시크릿만 교체하면 된다.
+
+  - id: ncp-access-key-id
+    description: 네이버 클라우드 플랫폼(NCP) Access Key ID
+    severity: high
+    keywords: [ncp, ncloud]
+    regex: '(?i)(x-ncp-iam-access-key|x-ncp-apigw-api-key-id|ncp[_\-.]?access[_\-.]?key([_\-.]?id)?|ncloud[_\-.]?access[_\-.]?key([_\-.]?id)?)\b[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9]{16,})'
+    secret_group: 4
+    entropy: 3.0
+    tags: [korea, naver, cloud]
+    remediation: >-
+      NCP 콘솔 → 마이페이지 → 계정 관리 → 인증키 관리에서 해당 인증키를 삭제하고
+      새로 생성하라. Access Key ID와 Secret Key는 한 쌍이라 ID만 유출됐어도 쌍 전체를
+      교체해야 한다. 서브 계정(IAM) 키라면 서브 계정 메뉴에서 처리한다.
+
+  - id: ncp-secret-key
+    description: 네이버 클라우드 플랫폼(NCP) Secret Key
+    severity: critical
+    # x-ncp-apigw-api-key-id(공개 식별자)는 위 룰이 가져가고, 접미사 없는
+    # x-ncp-apigw-api-key(시크릿)만 여기서 받는다. 이름 뒤 `-id`가 붙으면 값 자리에
+    # `id`가 와서 이 룰의 값 패턴(연속 20자 이상)이 성립하지 않아 서로 겹치지 않는다.
+    keywords: [ncp, ncloud]
+    regex: '(?i)(x-ncp-iam-secret-key|x-ncp-apigw-api-key|ncp[_\-.]?secret[_\-.]?key|ncloud[_\-.]?secret[_\-.]?key)\b[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9]{20,})'
+    secret_group: 2
+    entropy: 3.0
+    tags: [korea, naver, cloud]
+    remediation: >-
+      NCP 콘솔 → 마이페이지 → 계정 관리 → 인증키 관리에서 해당 인증키를 즉시 삭제하라.
+      Secret Key는 생성 시점 이후 콘솔에서 다시 조회할 수 없으므로, 재발급하면 이 키를
+      쓰던 모든 서버·CI의 설정을 함께 갱신해야 한다.
+
+  - id: toss-payments-secret-key
+    description: 토스페이먼츠 시크릿 키
+    severity: critical
+    keywords: [test_sk_, live_sk_, test_gsk_, live_gsk_]
+    # 클라이언트 키(test|live_ck_, test|live_gck_)는 브라우저에 노출되도록 설계된
+    # 공개값이라 룰에서 제외한다 (Stripe publishable key를 뺀 것과 같은 이유).
+    # 테스트 키(test_...)는 정규식에 걸리긴 하지만 값에 "test"가 들어가 placeholder-value
+    # 감점(-60)으로 신뢰도가 min_confidence 아래로 떨어져 리포트에서 빠진다.
+    # 실제 결제가 불가능해 유출 피해가 없다는 판단이고, Stripe 테스트 키 처리와 같다.
+    regex: '\b((test|live)_g?sk_[A-Za-z0-9]{20,})\b'
+    secret_group: 1
+    entropy: 3.5
+    tags: [korea, payment]
+    remediation: >-
+      토스페이먼츠 개발자센터 → 내 개발정보 → API 키에서 시크릿 키를 재발급하라.
+      클라이언트 키와 시크릿 키는 한 세트로 동작하므로 재발급 후 짝이 맞는지 확인해야
+      INVALID_API_KEY가 나지 않는다. 결제 취소·조회 API를 호출할 수 있는 키라서
+      유출 시 금전 피해로 직결된다.
+
+  - id: portone-api-secret
+    description: 포트원(아임포트) REST API 키/시크릿
+    severity: high
+    keywords: [imp_key, imp_secret, impkey, impsecret, portone]
+    # 가맹점 식별코드(imp########)는 클라이언트에 노출되는 공개값이라 제외한다.
+    # imp_key와 imp_secret은 둘이 함께 있어야 액세스 토큰을 받을 수 있어 같이 잡는다.
+    regex: '(?i)imp[_\-.]?(key|secret)\b[^a-zA-Z0-9]{0,20}[''"]?([A-Za-z0-9+/=]{20,})'
+    secret_group: 2
+    entropy: 3.0
+    tags: [korea, payment]
+    remediation: >-
+      포트원 관리자콘솔 → 결제연동 → 식별코드·API Keys에서 REST API Secret을 재발급하라.
+      재발급하면 기존 시크릿으로 발급된 액세스 토큰도 함께 무효화되므로 서버 설정을
+      동시에 갱신해야 한다.
+
   # ---------------------------------------------------------------- 일반 패턴
   - id: generic-api-key
     description: 키워드 + 값 형태의 범용 시크릿 (엔트로피 검증 병행)
@@ -409,6 +559,10 @@ filter:
     # 대상 디렉토리 안에 있으면 자기 자신도 다시 스캔 대상에 들어간다.
     # 내용이 해시뿐이라 위험하지는 않지만 파일 수 집계가 지저분해지므로 제외한다.
     - '(^|/)\.?secrethound-baseline\.json$'
+    # check 커맨드가 만드는 리포트도 같은 이유로 제외한다. 검사한 폴더 안에 리포트를
+    # 두고 다시 검사하면 리포트 자신이 스캔 대상이 된다. 값은 마스킹되어 있어 위험하지는
+    # 않지만, 파일 수 집계와 결과가 지저분해진다.
+    - '(^|/)secrethound-report\.(html|md|json)$'
 
   exclude_extensions:
     - .png

@@ -405,6 +405,8 @@
 
 <footer>secrethound · 로컬에서만 동작하는 정적 페이지 — 리포트 파일은 어디로도 전송되지 않습니다</footer>
 
+<!--SECRETHOUND_REPORT_SLOT-->
+
 <script>
 (function () {
   'use strict';
@@ -781,6 +783,25 @@
 
     detail.innerHTML = `<td colspan="7">${html}</td>`;
     tr.after(detail);
+  }
+
+  // ---- 페이지에 심어진 리포트 ----
+  // secrethound --format html 은 이 페이지에 리포트 JSON을 함께 심어 한 장짜리
+  // 파일로 내보낸다. 그 경우 파일을 고르는 단계 없이 곧바로 렌더한다.
+  // 심어진 리포트가 없으면(대시보드 원본을 그냥 연 경우) 기존 드래그앤드롭 경로로 받는다.
+  const embedded = document.getElementById('secrethound-report');
+  if (embedded) {
+    try {
+      const data = JSON.parse(embedded.textContent);
+      if (!Array.isArray(data.findings) || !data.summary) {
+        throw new Error('findings, summary 필드가 필요합니다');
+      }
+      report = data;
+      dropzone.style.display = 'none';
+      render();
+    } catch (err) {
+      showError('페이지에 심어진 리포트를 읽을 수 없습니다: ' + err.message);
+    }
   }
 
 })();

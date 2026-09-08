@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -54,8 +55,21 @@ func (c *Collector) WalkHistory(root string, opts HistoryOptions, fn func(Change
 		return stats, err
 	}
 
+	// git init 직후처럼 커밋이 하나도 없으면 git log 는 128로 실패한다.
+	// 검사할 히스토리가 없는 것은 오류가 아니므로 빈 결과로 돌려준다.
+	if !HasCommits(root) {
+		return stats, nil
+	}
+
 	args := []string{
-		"-C", root, "log",
+		"-C", root,
+		// core.quotepath 기본값(true)은 경로의 비ASCII 바이트를 8진수 이스케이프로
+		// 바꿔 내보낸다. 그러면 한글 파일명이 "docs/\354\232\251..." 형태로 나와
+		// 워킹트리 쪽 경로와 달라지고, 같은 시크릿이 두 건으로 갈라져 보고된다.
+		// 끄면 UTF-8 그대로 나온다. (특수문자가 든 경로는 여전히 따옴표로 감싸므로
+		// unquotePath 로 한 번 더 푼다)
+		"-c", "core.quotepath=false",
+		"log",
 		"--no-color",
 		"--no-merges",
 		"-p",
@@ -115,11 +129,18 @@ func (c *Collector) parseLog(r io.Reader, stats *HistoryStats, fn func(Change) e
 
 		case strings.HasPrefix(line, "+++ "):
 			path := strings.TrimPrefix(line, "+++ ")
+			// 파일명에 공백이 있으면 git은 이름 뒤에 탭을 붙여 경계를 표시한다
+			// (unified diff 관례). 탭 이후는 경로가 아니다.
+			if tab := strings.IndexByte(path, '\t'); tab >= 0 {
+				path = path[:tab]
+			}
 			if path == "/dev/null" {
 				skip = true
 				continue
 			}
-			current.Path = strings.TrimPrefix(path, "b/")
+			// 따옴표를 먼저 풀어야 한다. 감싸인 상태에서는 경로가 큰따옴표로
+			// 시작해 "b/" 접두사가 벗겨지지 않는다.
+			current.Path = strings.TrimPrefix(unquotePath(path), "b/")
 			skip = c.isSkippedHistoryPath(current.Path)
 
 		case strings.HasPrefix(line, "@@"):
@@ -185,3 +206,124 @@ func ensureGitRepo(root string) error {
 	}
 	return nil
 }
+
+// RepoRoot는 경로가 속한 git 워킹트리의 최상위 폴더를 절대경로로 돌려준다.
+// git 저장소가 아니거나 git이 설치되어 있지 않으면 빈 문자열을 돌려준다.
+func RepoRoot(path string) string {
+	out, err := exec.Command("git", "-C", path, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+
+	root := strings.TrimSpace(string(out))
+	if root == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		return abs
+	}
+	return root
+}
+
+// IsRepoRoot는 지정한 경로가 git 저장소의 최상위 폴더인지 확인한다.
+//
+// "이 폴더가 저장소인가"를 rev-parse --is-inside-work-tree 로만 판단하면 안 된다.
+// 그 질문은 상위 폴더까지 거슬러 올라가며 답하기 때문에, 홈 디렉토리가 저장소인
+// 환경에서는 아무 폴더나 true가 나온다. 그 상태로 히스토리 스캔을 켜면 사용자가
+// 고른 폴더와 아무 상관 없는 저장소의 커밋을 훑게 된다.
+func IsRepoRoot(path string) bool {
+	root := RepoRoot(path)
+	if root == "" {
+		return false
+	}
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	return sameDir(abs, root)
+}
+
+// sameDir는 두 경로가 같은 폴더를 가리키는지 확인한다. Windows는 대소문자와 경로
+// 구분자가 섞여 나올 수 있어 문자열 비교만으로는 부족하므로 실제 파일 정보로 확인한다.
+func sameDir(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(ai, bi)
+}
+
+// HasCommits는 저장소에 커밋이 하나라도 있는지 확인한다.
+// git init 직후처럼 커밋이 없으면 git log 는 실패하므로 히스토리 스캔 전에 걸러야 한다.
+func HasCommits(root string) bool {
+	return exec.Command("git", "-C", root, "rev-parse", "--verify", "HEAD").Run() == nil
+}
+
+// unquotePath는 git이 따옴표로 감싼 경로를 원래 문자열로 되돌린다.
+//
+// git은 경로에 특수문자(따옴표, 역슬래시, 제어문자)가 있거나 core.quotepath가
+// 켜져 있을 때 경로를 C 문자열처럼 감싸 내보낸다:
+//
+//	+++ "b/docs/\354\232\251\354\226\264\354\247\221.md"
+//
+// 이 형태를 풀지 않으면 경로가 워킹트리 쪽과 달라져, 같은 시크릿이 서로 다른
+// 두 건으로 보고된다. 8진수 이스케이프는 UTF-8 바이트 단위이므로 바이트로
+// 모아서 마지막에 문자열로 만든다.
+//
+// 감싸이지 않은 경로는 그대로 돌려준다.
+func unquotePath(s string) string {
+	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
+		return s
+	}
+	body := s[1 : len(s)-1]
+
+	out := make([]byte, 0, len(body))
+	for i := 0; i < len(body); i++ {
+		if body[i] != '\\' || i+1 >= len(body) {
+			out = append(out, body[i])
+			continue
+		}
+
+		i++
+		switch c := body[i]; c {
+		case 'a':
+			out = append(out, '\a')
+		case 'b':
+			out = append(out, '\b')
+		case 'f':
+			out = append(out, '\f')
+		case 'n':
+			out = append(out, '\n')
+		case 'r':
+			out = append(out, '\r')
+		case 't':
+			out = append(out, '\t')
+		case 'v':
+			out = append(out, '\v')
+		case '\\', '"':
+			out = append(out, c)
+		default:
+			// 8진수 3자리 (\354 등). 형식이 어긋나면 원문을 살려 둔다 —
+			// 경로를 조용히 망가뜨리는 것보다 낫다.
+			if i+2 < len(body) && isOctal(body[i]) && isOctal(body[i+1]) && isOctal(body[i+2]) {
+				v := (body[i]-'0')<<6 | (body[i+1]-'0')<<3 | (body[i+2] - '0')
+				out = append(out, v)
+				i += 2
+				continue
+			}
+			out = append(out, '\\', c)
+		}
+	}
+	return string(out)
+}
+
+func isOctal(c byte) bool { return c >= '0' && c <= '7' }

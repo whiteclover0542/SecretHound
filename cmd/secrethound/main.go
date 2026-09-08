@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -23,7 +24,21 @@ const (
 
 	formatText = "text"
 	formatJSON = "json"
+	formatMD   = "md"
+	formatHTML = "html"
+
+	// --open 으로 저장할 때 쓰는 기본 파일 이름 (확장자는 형식에 따라 붙는다).
+	defaultReportName = "secrethound-report"
 )
+
+// formatExt는 지원하는 출력 형식과 그 파일 확장자다.
+// 이 맵의 키가 곧 --format 이 받을 수 있는 값의 전부다.
+var formatExt = map[string]string{
+	formatText: ".txt",
+	formatJSON: ".json",
+	formatMD:   ".md",
+	formatHTML: ".html",
+}
 
 func main() {
 	if err := rootCmd().Execute(); err != nil {
@@ -38,7 +53,7 @@ func rootCmd() *cobra.Command {
 		Short:   "Git 레포에서 유출된 API 키와 시크릿을 탐지하는 도구",
 		Version: version,
 	}
-	cmd.AddCommand(scanCmd(), rulesCmd(), selfcheckCmd())
+	cmd.AddCommand(checkCmd(), scanCmd(), rulesCmd(), selfcheckCmd())
 	return cmd
 }
 
@@ -113,6 +128,7 @@ func scanCmd() *cobra.Command {
 		baselinePath    string
 		baselineOutPath string
 		workers         int
+		openReport      bool
 	)
 
 	cmd := &cobra.Command{
@@ -122,11 +138,18 @@ func scanCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if format != formatText && format != formatJSON {
-				return fmt.Errorf("지원하지 않는 출력 형식: %s (text 또는 json)", format)
+			ext, ok := formatExt[format]
+			if !ok {
+				return fmt.Errorf("지원하지 않는 출력 형식: %s (text, json, md, html 중 하나)", format)
 			}
 			if baselinePath != "" && baselineOutPath != "" {
 				return fmt.Errorf("--baseline 과 --baseline-out 은 함께 쓸 수 없습니다")
+			}
+
+			// --open 은 열어 볼 파일이 있어야 성립한다. 저장 위치를 따로 주지
+			// 않았으면 현재 폴더에 기본 이름으로 만든다.
+			if openReport && outputPath == "" {
+				outputPath = defaultReportName + ext
 			}
 
 			target := "."
@@ -186,22 +209,7 @@ func scanCmd() *cobra.Command {
 				Duration:       time.Since(started),
 			})
 
-			out := os.Stdout
-			if outputPath != "" {
-				f, err := os.Create(outputPath)
-				if err != nil {
-					return fmt.Errorf("결과 파일 생성 실패: %w", err)
-				}
-				defer f.Close()
-				out = f
-			}
-
-			if format == formatJSON {
-				err = reporter.WriteJSON(out, report)
-			} else {
-				err = reporter.WriteText(out, report, !noColor && reporter.IsTerminal(out))
-			}
-			if err != nil {
+			if err := emitReport(report, format, outputPath, !noColor); err != nil {
 				return err
 			}
 
@@ -213,6 +221,15 @@ func scanCmd() *cobra.Command {
 				}
 			}
 
+			if openReport {
+				// 브라우저를 못 열었다고 스캔 결과가 달라지지는 않는다.
+				// 경로만 알려주고 정상 흐름을 이어간다.
+				if err := reporter.OpenInBrowser(outputPath); err != nil {
+					fmt.Fprintf(os.Stderr, "리포트를 자동으로 열지 못했습니다 (%v)\n", err)
+				}
+				fmt.Fprintf(os.Stderr, "리포트 저장 위치: %s\n", outputPath)
+			}
+
 			if useExit && len(result.Findings) > 0 {
 				os.Exit(exitFindings)
 			}
@@ -221,7 +238,8 @@ func scanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&rulesPath, "rules", "r", "", "룰셋 파일 경로 (기본: 내장 룰셋)")
-	cmd.Flags().StringVarP(&format, "format", "f", formatText, "출력 형식 (text | json)")
+	cmd.Flags().StringVarP(&format, "format", "f", formatText,
+		"출력 형식 (text | json | md | html). html 은 리포트를 심은 대시보드 한 장을 만든다")
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "결과를 파일로 저장 (기본: 표준 출력)")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "색상 출력 비활성화")
 	cmd.Flags().BoolVar(&useExit, "exit-code", true, "시크릿 탐지 시 종료 코드 1 반환 (CI 연동용)")
@@ -240,7 +258,46 @@ func scanCmd() *cobra.Command {
 		"현재 탐지 결과를 baseline 파일로 저장 (--baseline 과 동시 사용 불가)")
 	cmd.Flags().IntVar(&workers, "workers", 0,
 		"정규식 매칭에 쓸 goroutine 수 (0 = CPU 코어 수만큼 자동)")
+	cmd.Flags().BoolVar(&openReport, "open", false,
+		"저장한 리포트를 기본 브라우저로 연다 (--output 을 생략하면 현재 폴더에 만든다)")
 	return cmd
+}
+
+// emitReport는 리포트를 지정한 형식으로 표준 출력 또는 파일에 쓴다.
+//
+// 파일에 쓸 때 defer 대신 명시적으로 닫는 이유는, 바로 뒤에서 --open 이 같은
+// 파일을 브라우저로 다시 열기 때문이다. 버퍼가 덜 비워진 채로 열리면 안 된다.
+func emitReport(report reporter.Report, format, path string, color bool) error {
+	if path == "" {
+		return writeReport(os.Stdout, report, format, color && reporter.IsTerminal(os.Stdout))
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("결과 파일 생성 실패: %w", err)
+	}
+	// 파일로 나가는 출력에는 색상 코드를 넣지 않는다.
+	if err := writeReport(f, report, format, false); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("결과 파일 저장 실패: %w", err)
+	}
+	return nil
+}
+
+func writeReport(w io.Writer, report reporter.Report, format string, color bool) error {
+	switch format {
+	case formatJSON:
+		return reporter.WriteJSON(w, report)
+	case formatMD:
+		return reporter.WriteMarkdown(w, report)
+	case formatHTML:
+		return reporter.WriteHTML(w, report, secrethound.Dashboard)
+	default:
+		return reporter.WriteText(w, report, color)
+	}
 }
 
 func rulesCmd() *cobra.Command {

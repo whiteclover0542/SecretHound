@@ -184,15 +184,17 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
-// writeRemediation은 탐지에서 그치지 않고 실제 대응까지 이어지도록, 폐기 절차와
-// 히스토리 정리 명령을 모아 보여준다. 같은 룰·같은 파일이 여러 건이어도 한 번씩만 싣는다.
-func writeRemediation(w io.Writer, findings []finding.Finding) {
-	type guide struct {
-		ruleID string
-		text   string
-	}
+// remediationGuide는 리포트 하단 "대응 방법"에 실리는 폐기 절차 한 건이다.
+type remediationGuide struct {
+	ruleID string
+	text   string
+}
 
-	var guides []guide
+// collectRemediation은 폐기 절차와 히스토리 정리 명령을 중복 없이 모은다.
+// 같은 룰이 여러 건 잡혀도 절차는 한 번, 같은 파일이 여러 건이어도 명령은 한 번만
+// 싣는다. 텍스트 출력과 마크다운 출력이 같은 목록을 쓰도록 여기서 한 번만 계산한다.
+func collectRemediation(findings []finding.Finding) ([]remediationGuide, []string) {
+	var guides []remediationGuide
 	var cleanups []string
 	seenRule := make(map[string]bool)
 	seenPath := make(map[string]bool)
@@ -200,13 +202,20 @@ func writeRemediation(w io.Writer, findings []finding.Finding) {
 	for _, f := range findings {
 		if f.Remediation != "" && !seenRule[f.RuleID] {
 			seenRule[f.RuleID] = true
-			guides = append(guides, guide{f.RuleID, f.Remediation})
+			guides = append(guides, remediationGuide{f.RuleID, f.Remediation})
 		}
 		if f.HistoryCleanup != "" && !seenPath[f.Path] {
 			seenPath[f.Path] = true
 			cleanups = append(cleanups, f.HistoryCleanup)
 		}
 	}
+	return guides, cleanups
+}
+
+// writeRemediation은 탐지에서 그치지 않고 실제 대응까지 이어지도록, 폐기 절차와
+// 히스토리 정리 명령을 리포트 하단에 모아 보여준다.
+func writeRemediation(w io.Writer, findings []finding.Finding) {
+	guides, cleanups := collectRemediation(findings)
 
 	if len(guides) == 0 && len(cleanups) == 0 {
 		return
@@ -244,7 +253,7 @@ func writeSummary(w io.Writer, r Report) {
 	}
 
 	line := fmt.Sprintf("%d건", r.Summary.Findings)
-	if breakdown := severityBreakdown(r.Summary.BySeverity); breakdown != "" {
+	if breakdown := SeverityBreakdown(r.Summary.BySeverity); breakdown != "" {
 		line += " (" + breakdown + ")"
 	}
 	fmt.Fprintf(w, "탐지       %s\n", line)
@@ -276,7 +285,9 @@ func writeValidationSummary(w io.Writer, v *ValidationSummary) {
 	}
 }
 
-func severityBreakdown(counts map[string]int) string {
+// SeverityBreakdown은 "critical 2, high 1" 형태의 심각도 분포 문자열을 만든다.
+// 리포트와 CLI 요약이 같은 표기를 쓰도록 공개한다.
+func SeverityBreakdown(counts map[string]int) string {
 	order := []config.Severity{
 		config.SeverityCritical, config.SeverityHigh,
 		config.SeverityMedium, config.SeverityLow,

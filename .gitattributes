@@ -2,3 +2,19 @@
 # gofmt 가 모든 파일을 미포맷으로 판정한다. 줄바꿈을 LF로 고정해
 # 로컬과 CI(Linux)의 검사 결과를 일치시킨다.
 * text=auto eol=lf
+
+# 배치 파일은 CRLF여야 한다. cmd.exe는 LF만 있는 파일에서 label/goto 처리가
+# 어긋나는 경우가 있어, 위의 eol=lf 기본값에서 예외로 둔다.
+*.bat text eol=crlf
+
+# 리소스·아이콘은 절대 줄바꿈 변환 대상이 되면 안 된다.
+*.ico binary
+*.syso binary
+
+# PowerShell 5.1은 BOM이 없는 스크립트를 시스템 ANSI 코드페이지로 읽는다. 그래서
+# packaging/windows/*.ps1 은 UTF-8 BOM으로 저장되어 있고, 그 BOM은 파일 내용의 일부이니
+# 편집할 때 지우면 안 된다 (지우면 스크립트 안의 한글이 깨진다).
+*.ps1 text eol=crlf
+
+# 배포 zip에 들어가는 안내문. 메모장에서 바로 열리도록 CRLF + UTF-8 BOM으로 둔다.
+packaging/windows/*.txt text eol=crlf
