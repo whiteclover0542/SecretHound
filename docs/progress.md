@@ -125,6 +125,18 @@ Reporter, CLI)는 전부 구현·검증됐다. Definition of Done 체크리스�
       — 실측에서 Flask 문서의 예시 SECRET_KEY가 신뢰도 60으로 살아남았다
 - [ ] 히스토리 스캔이 실질적으로 느려지는 대형 레포가 생기면, 워커 풀보다
       git 호출 방식 자체(파일별 병렬 `git log` 등)를 재검토
+- [ ] `generic-api-key`의 키워드 목록이 `token`/`secret`/`license`/`pat`를 단독으로는
+      받지 않는다(`access_token`·`auth_token`·`secret_key`·`client_secret` 형태만).
+      Okta `API_TOKEN`, Plaid `SECRET`, Notion·Vercel·HubSpot의 단독 `TOKEN`이 이 밖에
+      있다. 2026-09-09 실측: 룰 없는 국내외 서비스 27개 중 4개만 이 룰로 회복,
+      나머지 23개는 이 키워드 제한 때문에 여전히 미탐. 의도적으로 좁힌 경계라
+      건드리지 않았다 — 넓히면 CSRF 토큰·세션 ID 같은 비시크릿 필드까지 잡힐
+      위험이 있어, 코퍼스에 그런 트랩 케이스를 먼저 마련한 뒤 다뤄야 한다
+- [ ] 룰에 아예 없는 서비스는 구조적으로 미탐이다(엔트로피 단독 탐지가 MVP 제외라
+      최후 방어선이 없음). 2026-09-09 프로브에서 확인된 미등록 국내 서비스:
+      한국투자증권 KIS, 쿠팡파트너스, 나이스페이, KG이니시스, 솔라피, 카카오페이.
+      해외는 Cloudflare·Supabase·DigitalOcean 등 다수. 요청이 오면 그때그때
+      룰을 추가하는 것으로 충분한지, 별도로 우선순위를 매길지는 미정
 
 ## 확장 로드맵 (차별화 근거 만들기)
 
