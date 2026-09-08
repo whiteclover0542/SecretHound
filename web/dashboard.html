@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>secrethound 대시보드</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e6e8ec;
+    --text-dim: #9aa1ad;
+    --text-dimmer: #6b7280;
+    --accent: #4f8cff;
+    --critical: #ff4d5e;
+    --high: #ff8a3d;
+    --medium: #e6c542;
+    --low: #4fd1c5;
+    --valid: #ff4d5e;
+    --revoked: #4fd17e;
+    --unknown: #6b7280;
+    --radius: 8px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, "Malgun Gothic", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  header h1 span { color: var(--text-dim); font-weight: 400; }
+
+  #meta {
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  #meta code { color: var(--text); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+
+  main {
+    padding: 24px 28px 60px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ---- 드롭존 ---- */
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #dropzone:hover, #dropzone.drag {
+    border-color: var(--accent);
+    background: rgba(79,140,255,0.06);
+  }
+  #dropzone .big { font-size: 15px; color: var(--text); margin-bottom: 6px; }
+  #dropzone .small { font-size: 12.5px; }
+  #dropzone .small code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+  #fileInput { display: none; }
+
+  #error {
+    display: none;
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    background: rgba(255,77,94,0.1);
+    border: 1px solid rgba(255,77,94,0.35);
+    color: #ffb3ba;
+    font-size: 13px;
+  }
+
+  #app { display: none; }
+
+  /* ---- 요약 카드 ---- */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .card .num { font-size: 22px; font-weight: 600; }
+  .card .label { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+  .sev-breakdown { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .sev-pill {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+
+  #validationBanner {
+    display: none;
+    margin-bottom: 18px;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    background: rgba(255,77,94,0.08);
+    border: 1px solid rgba(255,77,94,0.3);
+    font-size: 13px;
+  }
+  #validationBanner b { color: var(--critical); }
+
+  #offlineBanner {
+    display: none;
+    margin-bottom: 18px;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    background: rgba(230,197,66,0.08);
+    border: 1px solid rgba(230,197,66,0.3);
+    font-size: 13px;
+    color: var(--medium);
+  }
+
+  /* ---- 대응 방법 ---- */
+  #remediation {
+    display: none;
+    margin-bottom: 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    overflow: hidden;
+  }
+  #remediation summary {
+    cursor: pointer;
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 13.5px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #remediation summary::-webkit-details-marker { display: none; }
+  #remediation summary::after {
+    content: '▸';
+    color: var(--text-dim);
+    transition: transform .15s;
+  }
+  #remediation[open] summary::after { transform: rotate(90deg); }
+  #remediation .body { padding: 0 16px 16px; }
+
+  .remGroup { margin-bottom: 14px; }
+  .remGroup h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+  .remItem { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .remItem:first-of-type { border-top: none; }
+  .remRule {
+    flex: 0 0 auto;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    background: var(--panel-2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--text-dim);
+    height: fit-content;
+    white-space: nowrap;
+  }
+  .cmdRow {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+  }
+  .cmdRow:first-of-type { border-top: none; }
+  .cmdRow code {
+    flex: 1;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12.5px;
+    background: var(--panel-2);
+    padding: 6px 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .copyBtn {
+    flex: 0 0 auto;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .copyBtn:hover { color: var(--text); border-color: var(--accent); }
+  .copyBtn.copied { color: var(--revoked); border-color: var(--revoked); }
+
+  /* ---- 필터 바 ---- */
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .chip {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-dim);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-weight: 600;
+    user-select: none;
+  }
+  .chip.active { color: var(--bg); border-color: transparent; }
+  .chip[data-sev="critical"].active { background: var(--critical); }
+  .chip[data-sev="high"].active { background: var(--high); }
+  .chip[data-sev="medium"].active { background: var(--medium); }
+  .chip[data-sev="low"].active { background: var(--low); }
+  .chip[data-sev="all"].active { background: var(--accent); color: #fff; }
+
+  #search {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 7px 12px;
+    font-size: 13px;
+    min-width: 220px;
+    flex: 1;
+  }
+  #search::placeholder { color: var(--text-dimmer); }
+
+  label.toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  label.toggle input { accent-color: var(--accent); }
+
+  #resultCount { font-size: 12px; color: var(--text-dimmer); margin-bottom: 8px; }
+
+  /* ---- 테이블 ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--text-dimmer);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  thead th:hover { color: var(--text-dim); }
+  thead th.sorted { color: var(--accent); }
+  tbody tr { border-bottom: 1px solid var(--border); cursor: pointer; }
+  tbody tr:hover { background: var(--panel); }
+  tbody td { padding: 9px 10px; vertical-align: top; }
+
+  .sevTag {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: .02em;
+  }
+  .sevTag.critical { background: rgba(255,77,94,0.15); color: var(--critical); }
+  .sevTag.high     { background: rgba(255,138,61,0.15); color: var(--high); }
+  .sevTag.medium   { background: rgba(230,197,66,0.15); color: var(--medium); }
+  .sevTag.low      { background: rgba(79,209,197,0.15); color: var(--low); }
+
+  .loc { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  .loc .hist { color: var(--text-dimmer); font-size: 11px; margin-left: 6px; }
+
+  .ruleId { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--text-dim); }
+
+  .masked { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; color: var(--text-dim); }
+
+  .valTag {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .valTag.valid   { background: rgba(255,77,94,0.15); color: var(--valid); }
+  .valTag.revoked { background: rgba(79,209,126,0.15); color: var(--revoked); }
+  .valTag.unknown { background: rgba(107,114,128,0.2); color: var(--unknown); }
+
+  .occ {
+    font-size: 11px;
+    color: var(--text-dimmer);
+  }
+
+  tr.detailRow { cursor: default; }
+  tr.detailRow:hover { background: none; }
+  tr.detailRow td {
+    background: var(--panel);
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .detailGrid { display: grid; grid-template-columns: 1fr; gap: 10px; font-size: 12.5px; }
+  .detailGrid .row { display: flex; gap: 8px; }
+  .detailGrid .k { flex: 0 0 90px; color: var(--text-dimmer); }
+  .detailGrid .v { flex: 1; }
+  .detailGrid code { font-family: ui-monospace, Consolas, monospace; background: var(--panel-2); padding: 6px 10px; border-radius: 4px; display: block; overflow-x: auto; white-space: pre-wrap; }
+
+  #empty { text-align: center; padding: 60px 20px; color: var(--text-dimmer); }
+
+  footer { text-align: center; padding: 30px; color: var(--text-dimmer); font-size: 12px; }
+  footer a { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>secrethound <span>대시보드</span></h1>
+  <div id="meta"></div>
+</header>
+
+<main>
+
+  <div id="dropzone">
+    <div class="big">JSON 리포트 파일을 여기로 끌어놓거나 클릭해서 선택하세요</div>
+    <div class="small"><code>secrethound scan ./repo --format json --output report.json</code> 로 만든 파일</div>
+    <input id="fileInput" type="file" accept="application/json,.json">
+  </div>
+  <div id="error"></div>
+
+  <div id="app">
+
+    <div class="cards" id="cards"></div>
+
+    <div id="validationBanner"></div>
+    <div id="offlineBanner"></div>
+
+    <details id="remediation">
+      <summary>대응 방법</summary>
+      <div class="body" id="remediationBody"></div>
+    </details>
+
+    <div class="toolbar">
+      <div class="chip active" data-sev="all">전체</div>
+      <div class="chip" data-sev="critical">CRITICAL</div>
+      <div class="chip" data-sev="high">HIGH</div>
+      <div class="chip" data-sev="medium">MEDIUM</div>
+      <div class="chip" data-sev="low">LOW</div>
+      <input id="search" type="text" placeholder="경로, 룰 ID로 검색">
+      <label class="toggle"><input type="checkbox" id="historyOnlyToggle"> 히스토리 발견만</label>
+    </div>
+
+    <div id="resultCount"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th data-key="severity">심각도</th>
+          <th data-key="path">위치</th>
+          <th data-key="rule_id">룰</th>
+          <th data-key="masked">값</th>
+          <th data-key="confidence">신뢰도</th>
+          <th data-key="occurrences">건수</th>
+          <th data-key="validation">검증</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+
+    <div id="empty" style="display:none">조건에 맞는 탐지 결과가 없습니다.</div>
+
+  </div>
+
+</main>
+
+<footer>secrethound · 로컬에서만 동작하는 정적 페이지 — 리포트 파일은 어디로도 전송되지 않습니다</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+  const SEV_LABEL = { critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' };
+
+  let report = null;
+  let state = {
+    severities: new Set(['critical', 'high', 'medium', 'low']),
+    search: '',
+    historyOnly: false,
+    sortKey: null,
+    sortDir: 1,
+    openRow: null,
+  };
+
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  // ---- 파일 로드 ----
+  const dropzone = $('#dropzone');
+  const fileInput = $('#fileInput');
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+  });
+  ['dragover', 'dragenter'].forEach(ev =>
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add('drag'); })
+  );
+  ['dragleave', 'drop'].forEach(ev =>
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove('drag'); })
+  );
+  dropzone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data.findings) || !data.summary) {
+          throw new Error('secrethound 리포트 형식이 아닙니다 (findings, summary 필드가 필요합니다)');
+        }
+        report = data;
+        showError(null);
+        render();
+      } catch (err) {
+        showError('리포트를 읽을 수 없습니다: ' + err.message);
+      }
+    };
+    reader.onerror = () => showError('파일을 읽는 중 오류가 발생했습니다.');
+    reader.readAsText(file);
+  }
+
+  function showError(msg) {
+    const el = $('#error');
+    if (!msg) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = 'block';
+    el.textContent = msg;
+  }
+
+  // ---- 렌더링 ----
+  function render() {
+    if (!report) return;
+    $('#app').style.display = 'block';
+    renderMeta();
+    renderCards();
+    renderValidationBanner();
+    renderRemediation();
+    renderTable();
+  }
+
+  function renderMeta() {
+    const d = new Date(report.scanned_at);
+    const when = isNaN(d) ? report.scanned_at : d.toLocaleString('ko-KR');
+    $('#meta').innerHTML =
+      `대상 <code>${esc(report.target)}</code> · v${esc(report.version || '?')} · ${esc(when)}`;
+  }
+
+  function renderCards() {
+    const s = report.summary;
+    const cards = [
+      { num: s.findings, label: '탐지' },
+      { num: s.files_scanned, label: '파일 스캔' },
+    ];
+    if (s.commits_scanned) cards.push({ num: s.commits_scanned, label: '커밋 스캔' });
+    cards.push({ num: s.filtered_out, label: '오탐 필터 제외' });
+    if (s.baseline_known) cards.push({ num: s.baseline_known, label: 'baseline 제외' });
+    cards.push({ num: (s.duration_ms ?? 0) + 'ms', label: '소요 시간' });
+
+    let html = cards.map(c => `
+      <div class="card">
+        <div class="num">${esc(c.num)}</div>
+        <div class="label">${esc(c.label)}</div>
+      </div>
+    `).join('');
+
+    if (s.by_severity && Object.keys(s.by_severity).length) {
+      const pills = ['critical', 'high', 'medium', 'low']
+        .filter(k => s.by_severity[k])
+        .map(k => `<span class="sev-pill sevTag ${k}">${SEV_LABEL[k]} ${s.by_severity[k]}</span>`)
+        .join('');
+      html += `<div class="card" style="grid-column: span 2">
+        <div class="label" style="margin-bottom:6px">심각도별</div>
+        <div class="sev-breakdown">${pills}</div>
+      </div>`;
+    }
+    $('#cards').innerHTML = html;
+  }
+
+  function renderValidationBanner() {
+    const v = report.summary.validation;
+    const banner = $('#validationBanner');
+    const offline = $('#offlineBanner');
+    if (!v) { banner.style.display = 'none'; offline.style.display = 'none'; return; }
+
+    banner.style.display = 'block';
+    let unsupported = v.unsupported ? ` (검증기 없는 룰 ${v.unsupported}건 제외)` : '';
+    if (v.valid > 0) {
+      banner.innerHTML = `<b>살아있는 키 ${v.valid}건</b> — 유효 ${v.valid}, 폐기됨 ${v.revoked}, 검증불가 ${v.unknown}${unsupported}. 파일을 지우기 전에 먼저 폐기하세요.`;
+    } else {
+      banner.style.display = 'none';
+    }
+    if (v.offline) {
+      offline.style.display = 'block';
+      offline.textContent = '! 네트워크에 연결하지 못해 일부 검증을 건너뛰었습니다';
+    } else {
+      offline.style.display = 'none';
+    }
+  }
+
+  function renderRemediation() {
+    const box = $('#remediation');
+    const body = $('#remediationBody');
+    const findings = report.findings;
+
+    const guides = [];
+    const seenRule = new Set();
+    const cleanups = [];
+    const seenPath = new Set();
+
+    findings.forEach(f => {
+      if (f.remediation && !seenRule.has(f.rule_id)) {
+        seenRule.add(f.rule_id);
+        guides.push({ rule: f.rule_id, text: f.remediation });
+      }
+      if (f.history_cleanup && !seenPath.has(f.path)) {
+        seenPath.add(f.path);
+        cleanups.push(f.history_cleanup);
+      }
+    });
+
+    if (guides.length === 0 && cleanups.length === 0) {
+      box.style.display = 'none';
+      return;
+    }
+    box.style.display = 'block';
+
+    let html = '';
+    if (cleanups.length > 0) {
+      html += `<div style="margin:0 0 14px;padding:10px 14px;border-radius:6px;background:rgba(255,77,94,0.08);border:1px solid rgba(255,77,94,0.3);font-size:12.5px;">
+        <b style="color:var(--critical)">키를 지우기 전에 반드시 먼저 폐기하세요</b> — 히스토리에서 파일만 지워도
+        키 자체는 여전히 유효하고, 이미 어딘가에 클론되어 있을 수 있습니다.
+      </div>`;
+    }
+    if (guides.length > 0) {
+      html += `<div class="remGroup"><h4>룰별 폐기 절차</h4>` +
+        guides.map(g => `<div class="remItem"><span class="remRule">${esc(g.rule)}</span><span>${esc(g.text)}</span></div>`).join('') +
+        `</div>`;
+    }
+    if (cleanups.length > 0) {
+      html += `<div class="remGroup"><h4>히스토리에서 제거 (폐기 완료 후 실행)</h4>` +
+        cleanups.map(c => `<div class="cmdRow"><code>${esc(c)}</code><button class="copyBtn" data-cmd="${esc(c)}">복사</button></div>`).join('') +
+        `<div style="font-size:11.5px;color:var(--text-dimmer);margin-top:8px">
+          해당 파일을 히스토리 전체에서 제거합니다. 실행 후 원격에 강제 푸시하고 팀원 전원이 저장소를 다시 클론해야 합니다.
+          파일 전체가 아니라 값만 지우려면 <code style="background:var(--panel-2);padding:1px 5px;border-radius:3px">git filter-repo --replace-text</code> 규칙을 직접 구성하세요.
+        </div></div>`;
+    }
+    body.innerHTML = html;
+
+    body.querySelectorAll('.copyBtn').forEach(btn => {
+      btn.addEventListener('click', () => copyToClipboard(btn.dataset.cmd, btn));
+    });
+  }
+
+  function copyToClipboard(text, btn) {
+    const done = () => {
+      const orig = btn.textContent;
+      btn.textContent = '복사됨';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { /* 무시 */ }
+    document.body.removeChild(ta);
+  }
+
+  // ---- 필터/정렬 바 ----
+  $$('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const sev = chip.dataset.sev;
+      if (sev === 'all') {
+        state.severities = new Set(['critical', 'high', 'medium', 'low']);
+      } else {
+        if (state.severities.has(sev) && state.severities.size === 1) {
+          state.severities = new Set(['critical', 'high', 'medium', 'low']);
+        } else {
+          state.severities = new Set([sev]);
+        }
+      }
+      syncChips();
+      renderTable();
+    });
+  });
+
+  function syncChips() {
+    const all = state.severities.size === 4;
+    $$('.chip').forEach(chip => {
+      const sev = chip.dataset.sev;
+      chip.classList.toggle('active', sev === 'all' ? all : (!all && state.severities.has(sev)));
+    });
+  }
+
+  $('#search').addEventListener('input', (e) => {
+    state.search = e.target.value.trim().toLowerCase();
+    renderTable();
+  });
+
+  $('#historyOnlyToggle').addEventListener('change', (e) => {
+    state.historyOnly = e.target.checked;
+    renderTable();
+  });
+
+  $$('thead th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if (state.sortKey === key) {
+        state.sortDir *= -1;
+      } else {
+        state.sortKey = key;
+        state.sortDir = 1;
+      }
+      $$('thead th').forEach(h => h.classList.remove('sorted'));
+      th.classList.add('sorted');
+      renderTable();
+    });
+  });
+
+  function validationRank(f) {
+    if (!f.validation) return 1;
+    if (f.validation.status === 'valid') return 0;
+    if (f.validation.status === 'revoked') return 2;
+    return 1;
+  }
+
+  function sortValue(f, key) {
+    switch (key) {
+      case 'severity': return SEV_ORDER[f.severity] ?? 9;
+      case 'path': return (f.path || '') + ':' + (f.line || 0);
+      case 'rule_id': return f.rule_id || '';
+      case 'masked': return f.secret || '';
+      case 'confidence': return f.confidence || 0;
+      case 'occurrences': return f.occurrences || 0;
+      case 'validation': return validationRank(f);
+      default: return 0;
+    }
+  }
+
+  function renderTable() {
+    const findings = report.findings.filter(f => {
+      if (!state.severities.has(f.severity)) return false;
+      if (state.historyOnly && !f.commit) return false;
+      if (state.search) {
+        const hay = (f.path + ' ' + f.rule_id + ' ' + (f.description || '')).toLowerCase();
+        if (!hay.includes(state.search)) return false;
+      }
+      return true;
+    });
+
+    if (state.sortKey) {
+      findings.sort((a, b) => {
+        const av = sortValue(a, state.sortKey), bv = sortValue(b, state.sortKey);
+        if (av < bv) return -1 * state.sortDir;
+        if (av > bv) return 1 * state.sortDir;
+        return 0;
+      });
+    }
+
+    $('#resultCount').textContent = `${findings.length}건 표시 (전체 ${report.findings.length}건 중)`;
+    $('#empty').style.display = findings.length === 0 ? 'block' : 'none';
+
+    const tbody = $('#tbody');
+    tbody.innerHTML = '';
+    findings.forEach((f, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="sevTag ${esc(f.severity)}">${esc(SEV_LABEL[f.severity] || f.severity)}</span></td>
+        <td class="loc">${esc(locationText(f))}${f.commit ? `<span class="hist">${f.in_worktree ? '현재도 존재' : '히스토리 전용'}</span>` : ''}</td>
+        <td class="ruleId">${esc(f.rule_id)}</td>
+        <td class="masked">${esc(f.secret || '')}</td>
+        <td>${esc(f.confidence)}</td>
+        <td class="occ">${f.occurrences > 1 ? f.occurrences + '곳' : '-'}</td>
+        <td>${validationBadge(f.validation)}</td>
+      `;
+      tr.addEventListener('click', () => toggleDetail(tr, f, idx));
+      tbody.appendChild(tr);
+    });
+  }
+
+  function locationText(f) {
+    if (f.commit) return `${f.path}@${f.commit.slice(0, 7)}:${f.line}`;
+    return `${f.path}:${f.line}`;
+  }
+
+  function validationBadge(v) {
+    if (!v) return '<span style="color:var(--text-dimmer)">-</span>';
+    const label = { valid: '유효', revoked: '폐기됨', unknown: '검증불가' }[v.status] || v.status;
+    return `<span class="valTag ${esc(v.status)}">${esc(v.provider ? v.provider + ' ' : '')}${esc(label)}</span>`;
+  }
+
+  function toggleDetail(tr, f, idx) {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('detailRow')) {
+      next.remove();
+      return;
+    }
+    $$('.detailRow').forEach(el => el.remove());
+
+    const detail = document.createElement('tr');
+    detail.className = 'detailRow';
+    const rows = [];
+    if (f.description) rows.push(['설명', esc(f.description)]);
+    if (f.author) rows.push(['작성자', esc(f.author)]);
+    if (f.date) rows.push(['날짜', esc(f.date)]);
+    if (f.tags && f.tags.length) rows.push(['태그', f.tags.map(esc).join(', ')]);
+    if (f.entropy) rows.push(['엔트로피', f.entropy.toFixed(2)]);
+    if (f.validation && f.validation.reason) rows.push(['검증 상세', esc(f.validation.reason)]);
+
+    let html = `<div class="detailGrid">` +
+      rows.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+    if (f.remediation) {
+      html += `<div class="row"><div class="k">폐기 절차</div><div class="v">${esc(f.remediation)}</div></div>`;
+    }
+    if (f.history_cleanup) {
+      html += `<div class="row"><div class="k">정리 명령</div><div class="v">
+        <code>${esc(f.history_cleanup)}</code>
+      </div></div>`;
+    }
+    html += `</div>`;
+
+    detail.innerHTML = `<td colspan="7">${html}</td>`;
+    tr.after(detail);
+  }
+
+})();
+</script>
+</body>
+</html>
