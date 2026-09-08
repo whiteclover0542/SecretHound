@@ -61,6 +61,12 @@ secrethound scan ./myrepo --format json --output report.json
 # 탐지된 키가 아직 살아있는지 발급처에 확인 (네트워크 사용)
 secrethound scan ./myrepo --validate
 
+# 이미 시크릿이 많은 레포에 처음 도입할 때: 현재 상태를 baseline으로 저장
+secrethound scan ./myrepo --history --baseline-out secrethound-baseline.json
+
+# 이후로는 baseline에 없는 새 시크릿만 보고
+secrethound scan ./myrepo --history --baseline secrethound-baseline.json
+
 # 탐지 룰 목록 확인 (어떤 룰이 검증 가능한지 함께 표시)
 secrethound rules
 ```
@@ -79,6 +85,8 @@ secrethound rules
 | `--exit-code` | 탐지 시 종료 코드 1 반환 (기본 true, CI 연동용) |
 | `--validate` | 탐지한 키가 살아있는지 발급처 API에 확인 (기본 false, 네트워크 사용) |
 | `--validate-timeout` | 검증 요청 하나당 제한 시간 (기본 5s) |
+| `--baseline-out` | 현재 탐지 결과를 baseline 파일로 저장 |
+| `--baseline` | 이 baseline 파일에 있는 시크릿은 결과에서 제외 (신규 항목만 보고). `--baseline-out`과 동시 사용 불가 |
 
 ### 종료 코드
 
@@ -256,6 +264,37 @@ AWS가 401이 아니라 403을 준다는 것도 이 방식으로 확인했다 �
 > 안 걸리는 룰 버그를 실제로 찾아 고쳤다. 사업자 인증·유료 계정이 필요한
 > 나머지 10곳(Stripe·Shopify 등)은 거부 경로만 확인된 상태다.
 
+## Baseline (기존 레포 도입)
+
+이미 시크릿이 여럿 커밋된 레포에 도입하면 첫 스캔에서 수십~수백 건이 쏟아진다.
+그 상태로 CI에 붙이면 계속 빨간불이라 아무도 안 보게 된다. baseline은 "지금 보이는
+것들은 이미 알고 있다"고 한 번 선언해두고, 이후로는 **새로 생긴 것만** 보고한다.
+
+```bash
+# 1. 도입 시점: 현재 상태를 baseline으로 저장
+secrethound scan ./myrepo --history --baseline-out secrethound-baseline.json
+
+# 2. 이후 CI에서: baseline에 없는 새 시크릿만 실패 처리
+secrethound scan ./myrepo --history --baseline secrethound-baseline.json
+```
+
+식별은 파일 경로·룰·시크릿 값의 해시로 한다. **원본 값은 저장하지 않는다** —
+baseline은 저장소에 커밋되는 파일이라, 원본을 넣으면 그 자체가 새로운 유출 경로가
+된다. 해시 기반이라 다음 상황에서도 흔들리지 않는다.
+
+- 파일 위쪽에 줄을 추가/삭제해 대상 줄 번호가 밀려도 같은 시크릿으로 인식한다
+- 히스토리에 새 커밋이 쌓여도 이미 알고 있는 값은 계속 알고 있는 상태로 유지된다
+- 같은 값이 여러 파일에 있으면 각각 별도로 추적한다 — 한 곳만 지우고 다른 곳을
+  놓치는 일을 방지하기 위함이다
+
+`--baseline`과 `--baseline-out`은 동시에 쓸 수 없다. 트리아지를 마치고 새로 나온
+시크릿까지 "알고 있음"으로 편입하려면 `--baseline-out`을 다시 실행해 덮어쓰면 된다.
+
+> 파일명을 `secrethound-baseline.json`(또는 `.secrethound-baseline.json`)으로
+> 두면 기본 룰셋이 스캔 대상에서 자동으로 제외한다. 그러지 않으면 baseline 파일이
+> 스캔 대상 디렉토리 안에 있는 경우 자기 자신도 매번 다시 스캔된다
+> (내용이 해시뿐이라 위험하지는 않지만 파일 수 집계가 지저분해진다).
+
 ## 룰셋 커스터마이징
 
 `--rules` 로 직접 작성한 룰셋을 넘길 수 있다.
@@ -378,6 +417,7 @@ jobs:
 | `rules` | (내장 룰셋) | 사용자 룰셋 경로 |
 | `fail-on-detection` | `true` | 탐지 시 워크플로 실패 여부 |
 | `report-path` | (임시 파일) | JSON 리포트 저장 경로 |
+| `baseline-path` | (미사용) | 이 baseline 파일에 있는 시크릿은 제외하고 새로 생긴 것만 탐지 |
 
 출력 `findings` 로 탐지 건수를 받을 수 있다.
 

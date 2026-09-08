@@ -321,6 +321,10 @@ filter:
     - '(^|/)(dist|build|out|target)/'
     - '\.(min\.js|min\.css|map)$'
     - '(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|Cargo\.lock|Gemfile\.lock)$'
+    # baseline 파일은 레포 안에 두고 커밋하는 것이 일반적인 사용법이라, 스캔
+    # 대상 디렉토리 안에 있으면 자기 자신도 다시 스캔 대상에 들어간다.
+    # 내용이 해시뿐이라 위험하지는 않지만 파일 수 집계가 지저분해지므로 제외한다.
+    - '(^|/)\.?secrethound-baseline\.json$'
 
   exclude_extensions:
     - .png

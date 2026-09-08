@@ -20,6 +20,7 @@ type Summary struct {
 	CommitsScanned int            `json:"commits_scanned"`
 	Findings       int            `json:"findings"`
 	FilteredOut    int            `json:"filtered_out"`
+	BaselineKnown  int            `json:"baseline_known,omitempty"`
 	BySeverity     map[string]int `json:"by_severity"`
 	DurationMS     int64          `json:"duration_ms"`
 
@@ -59,6 +60,7 @@ type Input struct {
 	FilesSkipped   int
 	CommitsScanned int
 	FilteredOut    int
+	BaselineKnown  int
 	Validated      bool
 	Validation     validator.Stats
 	Duration       time.Duration
@@ -93,6 +95,7 @@ func Build(in Input) Report {
 		CommitsScanned: in.CommitsScanned,
 		Findings:       len(findings),
 		FilteredOut:    in.FilteredOut,
+		BaselineKnown:  in.BaselineKnown,
 		BySeverity:     bySeverity,
 		DurationMS:     in.Duration.Milliseconds(),
 	}
@@ -175,6 +178,9 @@ func writeSummary(w io.Writer, r Report) {
 	}
 	fmt.Fprintf(w, "탐지       %s\n", line)
 	fmt.Fprintf(w, "오탐 필터  %d건 제외\n", r.Summary.FilteredOut)
+	if r.Summary.BaselineKnown > 0 {
+		fmt.Fprintf(w, "baseline   %d건 제외 (이미 알려진 시크릿)\n", r.Summary.BaselineKnown)
+	}
 	writeValidationSummary(w, r.Summary.Validation)
 	fmt.Fprintf(w, "소요       %dms\n", r.Summary.DurationMS)
 }

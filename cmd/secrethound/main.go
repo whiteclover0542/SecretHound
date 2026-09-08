@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	secrethound "github.com/whiteclover0542/secrethound"
+	"github.com/whiteclover0542/secrethound/internal/baseline"
 	"github.com/whiteclover0542/secrethound/internal/config"
 	"github.com/whiteclover0542/secrethound/internal/reporter"
 	"github.com/whiteclover0542/secrethound/internal/scanner"
@@ -99,16 +100,18 @@ func selfcheckCmd() *cobra.Command {
 
 func scanCmd() *cobra.Command {
 	var (
-		rulesPath   string
-		format      string
-		outputPath  string
-		noColor     bool
-		useExit     bool
-		history     bool
-		maxCommits  int
-		reportPath  string
-		validate    bool
-		validateTTL time.Duration
+		rulesPath       string
+		format          string
+		outputPath      string
+		noColor         bool
+		useExit         bool
+		history         bool
+		maxCommits      int
+		reportPath      string
+		validate        bool
+		validateTTL     time.Duration
+		baselinePath    string
+		baselineOutPath string
 	)
 
 	cmd := &cobra.Command{
@@ -120,6 +123,9 @@ func scanCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if format != formatText && format != formatJSON {
 				return fmt.Errorf("지원하지 않는 출력 형식: %s (text 또는 json)", format)
+			}
+			if baselinePath != "" && baselineOutPath != "" {
+				return fmt.Errorf("--baseline 과 --baseline-out 은 함께 쓸 수 없습니다")
 			}
 
 			target := "."
@@ -133,10 +139,19 @@ func scanCmd() *cobra.Command {
 				return err
 			}
 
+			var bl *baseline.Baseline
+			if baselinePath != "" {
+				bl, err = baseline.Load(baselinePath)
+				if err != nil {
+					return fmt.Errorf("%w (먼저 --baseline-out 으로 baseline을 만드세요)", err)
+				}
+			}
+
 			result, err := scanner.Run(cmd.Context(), rs, scanner.Options{
 				Target:     target,
 				History:    history,
 				MaxCommits: maxCommits,
+				Baseline:   bl,
 				Validate: scanner.ValidateOptions{
 					Enabled: validate,
 					Timeout: validateTTL,
@@ -144,6 +159,15 @@ func scanCmd() *cobra.Command {
 			})
 			if err != nil {
 				return err
+			}
+
+			if baselineOutPath != "" {
+				if err := baseline.Save(baselineOutPath, result.Findings); err != nil {
+					return fmt.Errorf("baseline 저장 실패: %w", err)
+				}
+				// 리포트 내용(stdout)과 섞이면 --format json 을 리다이렉트해 쓰는
+				// 파이프라인이 깨지므로 상태 메시지는 stderr로 보낸다.
+				fmt.Fprintf(os.Stderr, "baseline 저장됨: %s (%d건)\n", baselineOutPath, len(result.Findings))
 			}
 
 			report := reporter.Build(reporter.Input{
@@ -154,6 +178,7 @@ func scanCmd() *cobra.Command {
 				FilesSkipped:   result.FilesSkipped,
 				CommitsScanned: result.CommitsScanned,
 				FilteredOut:    result.FilteredOut,
+				BaselineKnown:  result.BaselineKnown,
 				Validated:      result.Validated,
 				Validation:     result.Validation,
 				Duration:       time.Since(started),
@@ -207,6 +232,10 @@ func scanCmd() *cobra.Command {
 		"탐지한 키가 살아있는지 발급처 API에 확인 (네트워크 사용, 기본 비활성)")
 	cmd.Flags().DurationVar(&validateTTL, "validate-timeout", 5*time.Second,
 		"검증 요청 하나당 제한 시간")
+	cmd.Flags().StringVar(&baselinePath, "baseline", "",
+		"이 baseline 파일에 있는 시크릿은 결과에서 제외 (신규 항목만 보고)")
+	cmd.Flags().StringVar(&baselineOutPath, "baseline-out", "",
+		"현재 탐지 결과를 baseline 파일로 저장 (--baseline 과 동시 사용 불가)")
 	return cmd
 }
 
