@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -198,5 +199,85 @@ func TestExpandTargetsFallsBackToPlainFolder(t *testing.T) {
 	}
 	if len(targets) != 1 || targets[0] != dir {
 		t.Errorf("대상 = %v, 기대값 [%s]", targets, dir)
+	}
+}
+
+// 저장소를 같은 이름의 폴더로 한 번 감싸두는 배치가 흔하다 (projects/myapp/myapp).
+// 한 단계만 내려가면 이런 저장소를 통째로 놓친다 — 실제로 그 버그가 있었다.
+func TestExpandTargetsFindsNestedRepos(t *testing.T) {
+	requireGitBinary(t)
+
+	parent := t.TempDir()
+	initRepoAt(t, filepath.Join(parent, "직속저장소"))            // 1단계
+	initRepoAt(t, filepath.Join(parent, "wrapper", "안쪽저장소")) // 2단계
+	initRepoAt(t, filepath.Join(parent, "a", "b", "깊은저장소"))  // 3단계
+
+	targets, err := expandTargets([]string{parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var names []string
+	for _, tgt := range targets {
+		names = append(names, filepath.Base(tgt))
+	}
+	sort.Strings(names)
+
+	want := []string{"깊은저장소", "안쪽저장소", "직속저장소"}
+	sort.Strings(want)
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Errorf("찾은 저장소 = %v, 기대값 %v", names, want)
+	}
+}
+
+// 깊이 제한이 없으면 홈 디렉토리를 고른 순간 디스크 전체를 훑게 된다.
+func TestExpandTargetsStopsAtDepthLimit(t *testing.T) {
+	requireGitBinary(t)
+
+	parent := t.TempDir()
+	deep := filepath.Join(parent, "a", "b", "c", "d", "너무깊은저장소")
+	initRepoAt(t, deep)
+
+	targets, err := expandTargets([]string{parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tgt := range targets {
+		if filepath.Base(tgt) == "너무깊은저장소" {
+			t.Errorf("깊이 제한(%d)을 넘는 저장소가 잡힘: %s", maxSearchDepth, tgt)
+		}
+	}
+}
+
+// 저장소 안의 서브모듈까지 따로 잡으면 같은 파일을 두 번 검사하게 된다.
+func TestExpandTargetsDoesNotDescendIntoRepos(t *testing.T) {
+	requireGitBinary(t)
+
+	parent := t.TempDir()
+	outer := filepath.Join(parent, "바깥저장소")
+	initRepoAt(t, outer)
+	initRepoAt(t, filepath.Join(outer, "안쪽"))
+
+	targets, err := expandTargets([]string{parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || filepath.Base(targets[0]) != "바깥저장소" {
+		t.Errorf("대상 = %v, 기대값 [바깥저장소]", targets)
+	}
+}
+
+// node_modules 같은 폴더는 크고 깊은데 그 안에 사용자의 저장소가 있을 리 없다.
+func TestSkipSearchDir(t *testing.T) {
+	skipped := []string{"node_modules", "vendor", ".git", ".idea", "dist", "build", "NODE_MODULES"}
+	for _, name := range skipped {
+		if !skipSearchDir(name) {
+			t.Errorf("%q 는 건너뛰어야 한다", name)
+		}
+	}
+	for _, name := range []string{"src", "myrepo", "내 프로젝트"} {
+		if skipSearchDir(name) {
+			t.Errorf("%q 는 들어가 봐야 한다", name)
+		}
 	}
 }

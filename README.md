@@ -70,8 +70,10 @@ $ secrethound check ./myrepo
 폴더를 생략하면 지금 있는 폴더를 검사한다. 플래그를 직접 조립하거나 CI에 붙일 때는
 종료 코드를 나눠 주는 [`scan`](#사용법) 을 쓴다.
 
-**여러 저장소를 한 번에** — 프로젝트를 모아두는 폴더를 지정하면 그 바로 아래의 git
-저장소를 전부 찾아 각각 검사한다. 폴더를 여러 개 직접 나열해도 된다.
+**여러 저장소를 한 번에** — 프로젝트를 모아두는 폴더를 지정하면 그 아래의 git
+저장소를 찾아 각각 검사한다. 저장소가 한 겹 더 감싸여 있어도(`projects/myapp/myapp`)
+찾아내며, 디스크 전체를 훑지 않도록 3단계까지만 내려간다. 폴더를 여러 개 직접
+나열해도 된다.
 
 ```console
 $ secrethound check C:\projects
@@ -91,8 +93,8 @@ $ secrethound check C:\projects
 ## 설치
 
 **실행 파일 내려받기 (Go 필요 없음)** —
-[Releases](https://github.com/whiteclover0542/secrethound/releases)에서 OS에 맞는 파일을 받는다.
-Windows용 zip에는 실행 파일과 함께 더블클릭용 바로가기가 들어있다.
+[Releases](https://github.com/whiteclover0542/SecretHound/releases)에서 OS에 맞는 파일을 받는다.
+Windows용 zip은 실행 파일과 안내문만 들어 있어, 압축을 풀고 exe를 두 번 클릭하면 된다.
 
 **Go가 있다면**
 

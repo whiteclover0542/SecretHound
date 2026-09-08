@@ -21,6 +21,13 @@ import (
 // 남에게 보내기 위한 것이다. 어느 쪽이 필요한지 사용자에게 묻지 않고 둘 다 만든다.
 var checkFormats = []string{formatHTML, formatMD}
 
+// maxSearchDepth는 저장소를 찾아 내려갈 최대 깊이다.
+//
+// 한 단계로는 부족하다 — 저장소를 같은 이름의 폴더로 한 번 감싸두는 배치가 흔하다
+// (projects/myapp/myapp). 반대로 제한이 없으면 홈 디렉토리를 고른 순간 디스크
+// 전체를 훑게 된다. 3단계면 projects/조직/저장소 같은 배치까지 닿는다.
+const maxSearchDepth = 3
+
 // maxReportSuffix는 같은 이름의 리포트를 몇 번까지 번호를 붙여 늘릴지다.
 // 여기에 걸릴 정도면 사용자가 리포트를 정리하지 않은 것이므로, 조용히 덮어쓰는
 // 대신 오류로 알린다.
@@ -179,11 +186,13 @@ func selectRoots(args []string, pick bool) ([]string, error) {
 
 // expandTargets는 지정된 폴더들을 실제로 검사할 폴더 목록으로 편다.
 //
-// 저장소가 아닌 폴더를 지정했는데 바로 아래에 저장소들이 있으면 그것들을 대신
-// 검사한다. 사용자가 프로젝트를 모아두는 폴더를 고르는 것이 자연스럽기 때문이다.
-// 한 단계만 내려가는 이유는, 더 깊이 들어가면 의도치 않게 홈 디렉토리 전체를
-// 훑는 일이 생기기 때문이다.
+// 저장소가 아닌 폴더를 지정했으면 그 아래에서 저장소를 찾아 대신 검사한다.
+// 사용자가 프로젝트를 모아두는 폴더를 고르는 것이 자연스럽기 때문이다.
 func expandTargets(roots []string) ([]string, error) {
+	return expandTargetsDepth(roots, maxSearchDepth)
+}
+
+func expandTargetsDepth(roots []string, depth int) ([]string, error) {
 	var targets []string
 	seen := make(map[string]bool)
 
@@ -199,29 +208,36 @@ func expandTargets(roots []string) ([]string, error) {
 	}
 
 	for _, root := range roots {
-		if collector.IsRepoRoot(root) {
+		if isRepoDir(root) {
 			add(root)
 			continue
 		}
 
-		children, err := childRepos(root)
+		found, err := findRepos(root, depth)
 		if err != nil {
 			return nil, err
 		}
-		if len(children) == 0 {
+		if len(found) == 0 {
 			// 저장소도 아니고 아래에 저장소도 없다. 그래도 파일 검사는 의미가 있다.
 			add(root)
 			continue
 		}
-		for _, c := range children {
+		for _, c := range found {
 			add(c)
 		}
 	}
 	return targets, nil
 }
 
-// childRepos는 폴더 바로 아래에 있는 git 저장소들을 이름순으로 돌려준다.
-func childRepos(root string) ([]string, error) {
+// findRepos는 폴더 아래에서 git 저장소를 찾아 이름순으로 돌려준다.
+//
+// 저장소를 찾으면 그 안으로는 더 내려가지 않는다. 서브모듈까지 따로 잡으면 같은
+// 파일을 두 번 검사하게 된다.
+func findRepos(root string, depth int) ([]string, error) {
+	if depth <= 0 {
+		return nil, nil
+	}
+
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, fmt.Errorf("폴더를 읽지 못했습니다: %w", err)
@@ -229,16 +245,52 @@ func childRepos(root string) ([]string, error) {
 
 	var repos []string
 	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+		if !e.IsDir() || skipSearchDir(e.Name()) {
 			continue
 		}
+
 		path := filepath.Join(root, e.Name())
-		if collector.IsRepoRoot(path) {
+		if isRepoDir(path) {
 			repos = append(repos, path)
+			continue
 		}
+
+		// 권한이 없거나 읽을 수 없는 폴더는 건너뛴다. 하나 때문에 전체 검사를
+		// 멈출 이유가 없다.
+		sub, err := findRepos(path, depth-1)
+		if err != nil {
+			continue
+		}
+		repos = append(repos, sub...)
 	}
+
 	sort.Strings(repos)
 	return repos, nil
+}
+
+// isRepoDir는 폴더가 git 저장소의 최상위인지 .git 의 존재만으로 판단한다.
+//
+// collector.IsRepoRoot 는 git 을 실행해 정확히 답하지만 호출마다 프로세스를 하나씩
+// 띄운다. 저장소를 찾느라 폴더 수백 개를 훑는 이 경로에서는 그 비용이 그대로 대기
+// 시간이 된다. 서브모듈·워크트리는 .git 이 파일이므로 종류는 따지지 않는다.
+// 히스토리를 실제로 읽을 수 있는지는 historyPlan 이 git 에게 다시 확인한다.
+func isRepoDir(path string) bool {
+	_, err := os.Stat(filepath.Join(path, ".git"))
+	return err == nil
+}
+
+// skipSearchDir는 저장소를 찾을 때 들어가 볼 필요가 없는 폴더를 걸러낸다.
+// 크고 깊은데 그 안에 사용자의 저장소가 있을 리 없는 것들이다.
+func skipSearchDir(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
+	switch strings.ToLower(name) {
+	case "node_modules", "vendor", "venv", "__pycache__",
+		"dist", "build", "target", "bin", "obj":
+		return true
+	}
+	return false
 }
 
 func scanOne(ctx context.Context, rs *config.Ruleset, target, outDir string, validate bool) (scanOutcome, error) {
