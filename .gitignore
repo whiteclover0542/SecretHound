@@ -29,3 +29,6 @@ Thumbs.db
 # check 커맨드가 만드는 리포트 (레포 안에서 돌리면 여기 생긴다)
 secrethound-report*.html
 secrethound-report*.md
+
+# check 커맨드가 리포트를 모으는 폴더
+secrethound-결과/

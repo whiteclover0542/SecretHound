@@ -76,10 +76,10 @@ func explorerLaunch(args []string) ([]string, bool) {
 		return args, false
 	}
 
-	// 리포트는 exe 옆에 만든다. 검사 대상 폴더에 만들면 대개 그 폴더가 저장소라
-	// 리포트가 같이 커밋되고, 현재 폴더에 만들면 탐색기가 준 위치라 사용자가
-	// 어디를 봐야 할지 알기 어렵다.
-	outDir := exeDir()
+	// 리포트는 exe 옆의 결과 폴더에 모은다. 검사 대상 폴더에 만들면 대개 그 폴더가
+	// 저장소라 리포트가 같이 커밋되고, 탐색기가 준 현재 폴더에 만들면 사용자가 어디를
+	// 봐야 할지 알기 어렵다. exe 옆에 그대로 쏟으면 실행 파일이 리포트에 파묻힌다.
+	outDir := filepath.Join(exeDir(), defaultReportDir)
 
 	switch {
 	case len(args) == 0:

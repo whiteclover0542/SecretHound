@@ -21,6 +21,13 @@ import (
 // 남에게 보내기 위한 것이다. 어느 쪽이 필요한지 사용자에게 묻지 않고 둘 다 만든다.
 var checkFormats = []string{formatHTML, formatMD}
 
+// defaultReportDir는 리포트를 모아 두는 폴더 이름이다.
+//
+// 프로그램이 있는 폴더에 리포트를 바로 쏟으면, 저장소를 몇 개만 검사해도 파일이
+// 금세 뒤섞여 실행 파일을 찾기 어려워진다. 한 겹 안으로 넣어 분리한다.
+// --out 을 주면 그 경로를 그대로 쓴다 (이 이름을 덧붙이지 않는다).
+const defaultReportDir = "secrethound-결과"
+
 // maxSearchDepth는 저장소를 찾아 내려갈 최대 깊이다.
 //
 // 한 단계로는 부족하다 — 저장소를 같은 이름의 폴더로 한 번 감싸두는 배치가 흔하다
@@ -91,10 +98,12 @@ CI에서 탐지 여부로 빌드를 실패시키려면 종료 코드를 나눠 �
 				return err
 			}
 
-			if outDir != "" {
-				if err := os.MkdirAll(outDir, 0o755); err != nil {
-					return fmt.Errorf("리포트를 저장할 폴더를 만들지 못했습니다: %w", err)
-				}
+			// --out 을 주지 않았으면 지금 있는 폴더 아래에 결과 폴더를 만든다.
+			if outDir == "" {
+				outDir = defaultReportDir
+			}
+			if err := os.MkdirAll(outDir, 0o755); err != nil {
+				return fmt.Errorf("리포트를 저장할 폴더를 만들지 못했습니다: %w", err)
 			}
 
 			rs, err := loadRuleset("")
