@@ -57,8 +57,8 @@ $ secrethound check ./myrepo
   지우기만 하면 키는 그대로 살아있습니다. 폐기 절차는 리포트에 있습니다.
 
 저장된 리포트
-  C:\work\secrethound-report.html
-  C:\work\secrethound-report.md
+  C:\work\secrethound-결과\secrethound-report-myrepo.html
+  C:\work\secrethound-결과\secrethound-report-myrepo.md
 ```
 
 `check` 하나로 다음이 전부 끝난다.
@@ -517,7 +517,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0      # --history 를 쓰려면 전체 히스토리가 필요하다
-      - uses: whiteclover0542/secrethound@main
+      - uses: whiteclover0542/SecretHound@main
         with:
           history: "true"
 ```
