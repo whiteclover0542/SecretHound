@@ -18,6 +18,20 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $folder = (Resolve-Path -LiteralPath $Folder).Path
+
+# .NET API는 상대 경로를 PowerShell의 현재 위치(Get-Location)가 아니라 프로세스의
+# 작업 디렉토리 기준으로 푼다. 이 둘은 다를 수 있고, 특히 CI에서 갈린다. 상대 경로를
+# 그대로 넘기면 엉뚱한 위치를 찾다가 "Could not find a part of the path"로 죽는다.
+if (-not [System.IO.Path]::IsPathRooted($Destination)) {
+    $Destination = Join-Path (Get-Location).Path $Destination
+}
+$Destination = [System.IO.Path]::GetFullPath($Destination)
+
+$parent = Split-Path -Parent $Destination
+if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+}
+
 if (Test-Path -LiteralPath $Destination) {
     Remove-Item -LiteralPath $Destination
 }

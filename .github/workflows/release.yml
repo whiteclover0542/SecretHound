@@ -68,7 +68,10 @@ jobs:
           VERSION: ${{ needs.version.outputs.value }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          # 러너 기본 정책으로도 저장소 안의 스크립트는 실행되지만, 정책이 더 엄격한
+          # 환경을 대비해 낮춰 둔다. 그룹 정책으로 막혀 있으면 이 호출 자체가 실패할
+          # 수 있는데, 그것 때문에 패키징이 죽을 이유는 없으므로 삼킨다.
+          try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch { }
 
           Copy-Item 'packaging/windows/scan.bat' stage
           Copy-Item 'packaging/windows/사용법.txt' stage
