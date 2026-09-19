@@ -32,3 +32,6 @@ secrethound-report*.md
 
 # check 커맨드가 리포트를 모으는 폴더
 secrethound-결과/
+
+# 로컬 전용 문서 (혼자 할 수 없는 평가 계획 등, 깃허브에 올리지 않음)
+/private/
