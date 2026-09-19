@@ -83,24 +83,30 @@ func fake(prefix string, n int) string {
 //   - shopify-access-token : 상점 도메인을 알아야 호출할 수 있는데 토큰에 들어있지 않다.
 //   - jwt / private-key / db-connection-string / basic-auth-header / generic-api-key :
 //     발급처가 정해져 있지 않다. 검증하려면 임의의 호스트에 접속해야 하므로 하지 않는다.
+//   - kr-public-data-service-key : google-api-key와 같은 이유. 키마다 활용 신청한 API가 다르다.
+//   - naver-openapi-client-secret / portone-api-secret : 짝이 되는 Client ID·imp_key가 있어야 인증된다.
+//   - ncp-access-key-id / ncp-secret-key : 두 값이 모두 있어야 요청에 서명할 수 있다.
 var ruleProviders = map[string]string{
-	"aws-access-key-id":       "aws",
-	"github-pat":              "github",
-	"github-fine-grained-pat": "github",
-	"github-oauth-token":      "github",
-	"gitlab-pat":              "gitlab",
-	"slack-token":             "slack",
-	"slack-app-token":         "slack",
-	"slack-webhook":           "slack-webhook",
-	"stripe-secret-key":       "stripe",
-	"openai-api-key":          "openai",
-	"anthropic-api-key":       "anthropic",
-	"sendgrid-api-key":        "sendgrid",
-	"mailgun-api-key":         "mailgun",
-	"npm-access-token":        "npm",
-	"discord-bot-token":       "discord",
-	"telegram-bot-token":      "telegram",
-	"heroku-api-key":          "heroku",
+	"aws-access-key-id":        "aws",
+	"github-pat":               "github",
+	"github-fine-grained-pat":  "github",
+	"github-oauth-token":       "github",
+	"gitlab-pat":               "gitlab",
+	"slack-token":              "slack",
+	"slack-app-token":          "slack",
+	"slack-webhook":            "slack-webhook",
+	"stripe-secret-key":        "stripe",
+	"openai-api-key":           "openai",
+	"anthropic-api-key":        "anthropic",
+	"sendgrid-api-key":         "sendgrid",
+	"mailgun-api-key":          "mailgun",
+	"npm-access-token":         "npm",
+	"discord-bot-token":        "discord",
+	"telegram-bot-token":       "telegram",
+	"heroku-api-key":           "heroku",
+	"kakao-rest-api-key":       "kakao",
+	"kakao-admin-key":          "kakao-admin",
+	"toss-payments-secret-key": "toss",
 }
 
 func providerFor(ruleID string) (string, bool) {
@@ -155,6 +161,9 @@ func defaultEndpoints() endpoints {
 		"github":        "https://api.github.com",
 		"gitlab":        "https://gitlab.com",
 		"heroku":        "https://api.heroku.com",
+		"kakao":         "https://dapi.kakao.com",
+		"kakao-admin":   "https://kapi.kakao.com",
+		"toss":          "https://api.tosspayments.com",
 		"mailgun":       "https://api.mailgun.net",
 		"npm":           "https://registry.npmjs.org",
 		"openai":        "https://api.openai.com",
@@ -377,6 +386,64 @@ var providers = map[string]provider{
 		},
 		revoked: &signature{code: 401, markers: []string{"Invalid credentials provided"}},
 	},
+
+	// 로컬(주소 검색) API는 REST API 키로 호출하는 가장 흔한 API이고, 결과가 공개 주소 데이터라
+	// 키 소유자의 정보를 전혀 건드리지 않는다.
+	"kakao": {
+		name:  "kakao",
+		label: "Kakao",
+		build: func(ctx context.Context, base string, c credential) (*http.Request, error) {
+			req, err := get(ctx, base+"/v2/local/search/address.json?query=secrethound&size=1")
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("Authorization", "KakaoAK "+c.secret)
+			return req, nil
+		},
+		revoked: &signature{code: 401, markers: []string{"AccessDeniedError"}},
+	},
+
+	// Admin 키가 로컬 API에서도 통하는지는 확인하지 못했다. 그래서 Admin 키로만 호출할 수 있는
+	// 사용자 목록 조회를 쓴다. 읽기 전용이고 limit=1이라 앱 사용자 ID 하나 이상은 받지 않는다.
+	"kakao-admin": {
+		name:  "kakao-admin",
+		label: "Kakao Admin",
+		build: func(ctx context.Context, base string, c credential) (*http.Request, error) {
+			req, err := get(ctx, base+"/v1/user/ids?limit=1")
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("Authorization", "KakaoAK "+c.secret)
+			return req, nil
+		},
+		revoked: &signature{code: 401, markers: []string{`"code":-401`}},
+	},
+
+	// 토스페이먼츠에는 신원 조회 API가 없다. 대신 존재할 수 없는 주문번호로 결제를 조회한다.
+	// 살아있는 키는 인증을 통과해 404 NOT_FOUND_PAYMENT를, 죽은 키는 401 UNAUTHORIZED_KEY를 받는다.
+	"toss": {
+		name:  "toss",
+		label: "Toss Payments",
+		build: func(ctx context.Context, base string, c credential) (*http.Request, error) {
+			req, err := get(ctx, base+"/v1/payments/orders/secrethound-liveness-probe")
+			if err != nil {
+				return nil, err
+			}
+			req.SetBasicAuth(c.secret, "")
+			return req, nil
+		},
+		inspect: inspectToss,
+		revoked: tossRevoked,
+	},
+}
+
+var tossRevoked = &signature{code: 401, markers: []string{"UNAUTHORIZED_KEY"}}
+
+func inspectToss(code int, body []byte) (Status, string) {
+	if code == http.StatusNotFound && strings.Contains(string(body), "NOT_FOUND_PAYMENT") {
+		return StatusValid, "키가 살아있음 (인증 통과 후 주문 조회 단계까지 도달)"
+	}
+	return classifyWith(tossRevoked, code, body)
 }
 
 func get(ctx context.Context, url string) (*http.Request, error) {

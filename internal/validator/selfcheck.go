@@ -37,6 +37,9 @@ func probes() map[string]credential {
 		"discord":       {secret: "M" + strings.Repeat("0", 23) + "." + strings.Repeat("0", 6) + "." + strings.Repeat("0", 27)},
 		"telegram":      {secret: strings.Repeat("0", 10) + ":AA" + strings.Repeat("0", 33)},
 		"heroku":        {secret: "00000000-0000-0000-0000-000000000000"},
+		"kakao":         {secret: strings.Repeat("0", 32)},
+		"kakao-admin":   {secret: strings.Repeat("0", 32)},
+		"toss":          {secret: fake("live_sk_", 24)},
 	}
 }
 

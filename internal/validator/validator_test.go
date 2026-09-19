@@ -365,3 +365,23 @@ func TestSupportedRulesReportsLabels(t *testing.T) {
 		t.Errorf("aws-access-key-id = %q", got["aws-access-key-id"])
 	}
 }
+
+// 토스는 살아있는 키에 2xx가 아니라 404를 준다. 404를 전부 유효로 보거나
+// 전부 검증불가로 보면 둘 다 틀리므로 본문까지 보고 가른다.
+func TestInspectToss(t *testing.T) {
+	cases := []struct {
+		code int
+		body string
+		want Status
+	}{
+		{404, `{"code":"NOT_FOUND_PAYMENT"}`, StatusValid},
+		{401, `{"code":"UNAUTHORIZED_KEY"}`, StatusRevoked},
+		{404, `<html>not found</html>`, StatusUnknown},
+		{401, `{"code":"SOMETHING_ELSE"}`, StatusUnknown},
+	}
+	for _, c := range cases {
+		if got, _ := inspectToss(c.code, []byte(c.body)); got != c.want {
+			t.Errorf("inspectToss(%d, %s) = %s, 기대값 %s", c.code, c.body, got, c.want)
+		}
+	}
+}
